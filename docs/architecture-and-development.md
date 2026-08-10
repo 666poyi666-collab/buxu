@@ -78,9 +78,11 @@
 
 `PhoneNavigationSpec` 固定目的地顺序、短标签和可访问名称；`PhoneTabView` 提供至少 48dp 触控区、选中状态与胶囊反馈；`PhoneSymbolView` 在 24×24 视口绘制项目原创的计划、训练、历史、睡眠、返回与定位图形，不依赖 OEM 字体中的 Unicode 图标。Phone 与 Watch 启动器共享同一组原创“间歇路线” path、颜色、深色背景和自适应安全区，Phone 另提供 Android 13 monochrome 层；单元测试跨模块比较 path，阻止两个入口再次漂移。具体来源、许可边界与资源清单见 [phone-ui-design.md](phone-ui-design.md)；Apple UI Kit、SF 字体、SF Symbols 与 Activity Rings 路径均不进入 APK 或仓库。
 
-手机睡眠页采用 offline-first 投影。`PhoneSleepRepository` 把每次成功读取的最近 31 天 `record/session/stage` 合并进 SharedPreferences schema 1；传输失败、权限暂不可用或 ready 空列表都不删除既有记录，损坏/未来 schema 安全忽略。`PhoneSleepOverview` 只聚合系统实际提供的多 session 总时长、深睡、浅睡、REM、清醒、评分、血氧、心率和呼吸；`SleepStageBarView` 按真实分钟比例绘制并提供 TalkBack 描述，缺少完整阶段字段时隐藏图而不是补零。前台睡眠页、手动全量同步和 Cloud V3 的 31 天采集入口均更新同一缓存。
+手机睡眠页采用 offline-first 投影。`PhoneSleepRepository` 把每次成功读取的最近 31 天 `record/session/stage` 合并进 SharedPreferences schema 1；传输失败、权限暂不可用或 ready 空列表都不删除既有记录，损坏/未来 schema 安全忽略。`PhoneSleepOverview` 只聚合系统实际提供的多 session 总时长、深睡、浅睡、REM、清醒、评分、血氧、心率和呼吸；`PhoneSleepTimeline`/`SleepStageTimelineView` 依据 stage 起止时间保留夜间清醒、session 空档与未知阶段，`PhoneSleepWeek`/`SleepWeekTrendView` 只从缓存生成近 7 晚总时长趋势。缺少完整阶段字段时显示文字空态，不补零、不猜测。`PhoneSleepSync` 以 7 天页读取 31 天窗口并在进程内 single-flight；前台睡眠页、手动全量同步和 `PhoneSleepSyncWorker` 共享同一次读取和同一缓存。完整健康明细保存在 `phone_sleep_cache.xml`，并同时从 legacy Auto Backup、Android 12+ cloud backup 和 device transfer 排除。
 
-Phone 0.23.0 的活动设置页只展示 Cloud V3 `/sync/v3/exchange` 与 Keystore device token。V2 root/recovery/approval 源码与旧 state 按迁移要求保留，但不再挂接 UI、调用或生成新 root；视觉文案不得把 V3 描述为应用层加密同步。
+手机计划页采用 library list -> plan detail -> editor 的单向层级。列表用于浏览，详情承担“设为手表当前”、编辑和经确认删除，编辑器只保存 Phone/Cloud 计划草稿；保存与切换当前计划不得互相隐式触发。`PhonePlanUiModel` 负责阶段标签、时间/距离安全切换和重复阶段压缩，Activity 重建保存编辑草稿和脏状态，返回时先确认放弃。动态阶段操作保持至少 48dp 触控目标并在 `contentDescription` 中携带阶段序号与当前值。
+
+Phone 0.24.0 的活动设置页只展示 Cloud V3 `/sync/v3/exchange` 与 Keystore device token。V2 root/recovery/approval 源码与旧 state 按迁移要求保留，但不再挂接 UI、调用或生成新 root；视觉文案不得把 V3 描述为应用层加密同步。
 
 ## 3. 核心状态和不变量
 
@@ -174,7 +176,7 @@ Watch 与 Phone manifest 均设置 `allowBackup=false`；Phone 的 Auto Backup /
 | `GET/DELETE /v1/history/{id}` | 详情或删除 |
 | `GET /v1/history/{id}/route?cursor=&limit=` | 分页读取原始 WGS-84 轨迹 |
 | `GET /v1/history/{id}/heart?cursor=&limit=` | 分页读取心率样本 |
-| `GET /v1/sleep?days=1..31` | 系统睡眠记录、session 和原始阶段时间线；默认 7 天 |
+| `GET /v1/sleep?days=1..31&offsetDays=0..30` | 有界时间窗的系统睡眠记录、session 和原始阶段时间线；响应包含 `complete`、`coverageStart`、`coverageEnd`，Phone 按 7 天分页读取最近 31 天 |
 | `POST /v1/location` | 手机定位中继 |
 | `POST /v1/control/{start\|pause\|resume\|toggle\|stop\|delete_workout}` | 带 commandId/expiresAt 的幂等训练控制与训练删除；Cloud start 携带并严格执行 planId，迁移期本地调用省略时才使用当前选择 |
 | `POST /v1/sync/operations` | 计划 outbox 操作去重与 ACK |
@@ -187,7 +189,7 @@ Watch 与 Phone manifest 均设置 `allowBackup=false`；Phone 的 Auto Backup /
 
 ### 手机 Cloud V3 同步
 
-Phone 0.23.0 的 canonical 路由为 Device Bearer Token 认证的 `POST /sync/v3/exchange`。请求严格包含 protocolVersion、requestId、deviceId、cursor、最多 25 项 planChanges/workoutFacts/sleepRecords、可选 liveStatus 和 commandResults；成功响应必须携带匹配 `^v3d\.[A-Za-z0-9_-]{8,64}$` 的 owner/library `revisionDomainId`。Worker 缺失或非法 domain 时 `/readyz` 与 exchange 均 fail closed；Phone 只有在本地尚未保存 cloud revision domain 时才兼容旧在途无字段响应，已绑定后缺字段也 fail closed。未知字段、路线、坐标、逐点心率和凭据字段在 Phone 组包与 Worker 入口两侧都 fail closed。业务正文不再做应用层 E2EE，HTTPS、Keystore token 包装、安全 BLE 与 OAuth 边界继续保留。
+Phone 0.24.0 的 canonical 路由为 Device Bearer Token 认证的 `POST /sync/v3/exchange`。请求严格包含 protocolVersion、requestId、deviceId、cursor、最多 25 项 planChanges/workoutFacts/sleepRecords、可选 liveStatus 和 commandResults；成功响应必须携带匹配 `^v3d\.[A-Za-z0-9_-]{8,64}$` 的 owner/library `revisionDomainId`。Worker 缺失或非法 domain 时 `/readyz` 与 exchange 均 fail closed；Phone 只有在本地尚未保存 cloud revision domain 时才兼容旧在途无字段响应，已绑定后缺字段也 fail closed。未知字段、路线、坐标、逐点心率和凭据字段在 Phone 组包与 Worker 入口两侧都 fail closed。业务正文不再做应用层 E2EE，HTTPS、Keystore token 包装、安全 BLE 与 OAuth 边界继续保留。
 
 `watch_cloud_v3` state 保存 outbox、active request、cursor、workout/sleep receipt、冲突双方、已执行命令和待回传结果。exchange 在进程内统一串行；active request 固化 endpoint + token credential fingerprint，endpoint/device authority 重绑时旧 state 先备份后重建；相同 active request 原样重试，HTTP 409 `cursor_ahead` 只按响应 `resetCursor` 清 active request并重建。网络返回后由 `CloudSyncCredentials.runIfCurrent` 持有与 save/load 相同的 class monitor，完成最后 credential generation 复核和 `applyResponse()` 全部本地副作用；不匹配时旧响应零写入。ACK 才写 receipt；普通 conflict 从 outbox 移入持久 conflict store，并附带本地 candidate 和服务器计划库。HTTP 往返期间本地计划 revision/fingerprint 变化时，响应不得覆盖新编辑；Cloud library 通过 `PhonePlanLibrary` 单锁 compare-and-apply，原始 cloud 与 Phone projection 共用 null selection/group、显式 sortOrder 的 canonical fingerprint。
 
@@ -276,7 +278,13 @@ BAIDU_MAP_AK=YOUR_LOCAL_KEY
 - 角色固定为手机 Central/GATT Client、OWW221 Peripheral/GATT Server；旧 `BleProbeService` 已删除，正式服务均 `exported=false`。
 - GATT 服务包含设备信息、配对、控制、事件、同步收发、定位、LAN endpoint 和心跳特征；手机顺序订阅 indication 后认证。
 - 消息使用 16 字节帧头，兼容默认 MTU 23；单帧同时受 `MTU-3` 与 512 字节属性值上限约束，消息上限 256 KB，不完整帧 30 秒清理。
-- `WatchConnectionManager` 负责 BLE 优先、LAN 加速、状态快照和退避。控制、计划、同步与定位优先 BLE；历史/睡眠等批量读取优先已验证 LAN，失败可回退 BLE。
+- `WatchConnectionManager` 负责 BLE 优先、LAN 加速、状态快照和退避。控制、计划、同步与定位优先 BLE；历史/睡眠等批量读取优先已验证 LAN。LAN 的幂等 GET 失败时，只有已认证 BLE session 可直接重放，否则先连接认证；重放只使用原请求剩余 TTL，过期或写请求不自动回退。
 - 训练成功写入 `HistoryStore` 后只发送安全 `history_changed` indication；手机收到后通过 WorkManager 读取完整 authenticated `/v1/history`，事件通道本身绝不承载训练摘要。事件重复由唯一工作去重，断联漏事件由成功重连与周期任务补偿。
 - 2026-07-26 真机已验证 OWW221 广播、Xiaomi 连接、MTU 517、四个 CCCD、AUTH、计划 outbox、计划回读和定位请求。
 - 安全版使用 P-256 ECDH、一次性验证码 HMAC 确认、长期配对密钥、challenge-response、AES-GCM、随机 sequence 和持久认证 challenge 防重放；真机门禁通过前仍关联 `BUG-015`。无 Wi-Fi、后台、重启、5 分钟息屏、10 次重连、100 次请求和 15 分钟功耗关联 `BUG-016`。
+
+## 12. OWW221 等价模拟环境
+
+`tools/oww221-avd.ps1` 管理独立 `OWW221_API30` AVD，固定 Android 11/API 30、378x496、320 dpi、60 Hz、竖屏、30 秒息屏和 Watch debug APK 安装/核验。脚本提供 `Create`、`Start`、`Install`、`Verify`、`Sleep`、`Wake`、`Capture`、`Stop` 动作，证据只写入被忽略的 `.gradle/oww221-avd/evidence`。
+
+该环境只等价覆盖 Android framework/API、目标像素画布、字体/触控/返回/息屏 Activity 生命周期和基础渲染。Google APIs x86_64 镜像不是 OPPO/ColorOS Watch 固件，不能模拟 HeyTap HealthKit、厂商 signature 权限、真实心率/步数/GNSS、BLE Peripheral 栈、圆角 AMOLED 裁切、功耗和 OEM 后台策略；这些项目必须保留 OWW221 真机门禁，不得用 AVD 结果替代。

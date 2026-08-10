@@ -49,8 +49,17 @@ function Assert-Tool([string]$Path) {
 }
 
 function Invoke-Adb([string[]]$Arguments) {
-    $output = & $Adb -s $Serial @Arguments 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) { throw "adb $($Arguments -join ' ') failed: $($output.Trim())" }
+    $previousPreference = $ErrorActionPreference
+    try {
+        # adb writes normal diagnostics (notably monkey's argument echo) to stderr.
+        # Native process success is therefore determined by its exit code only.
+        $ErrorActionPreference = 'Continue'
+        $output = & $Adb -s $Serial @Arguments 2>&1 | Out-String
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    if ($exitCode -ne 0) { throw "adb $($Arguments -join ' ') failed: $($output.Trim())" }
     return $output.Trim()
 }
 
@@ -84,7 +93,7 @@ function Set-ConfigValue([string]$Path, [string]$Key, [string]$Value) {
 function New-Oww221Avd {
     Assert-Tool $AvdManager
     $imageDir = Join-Path $Sdk 'system-images\android-30\google_apis\x86_64'
-    if (-not (Test-Path -LiteralPath (Join-Path $imageDir 'package.xml'))) {
+    if (-not (Test-Path -LiteralPath (Join-Path $imageDir 'source.properties'))) {
         throw "Missing $Package. Install it with sdkmanager before creating the AVD."
     }
 
@@ -131,9 +140,13 @@ function New-Oww221Avd {
 
 function Start-Oww221Avd {
     Assert-Tool $Emulator
-    $args = @('-avd', $Name, '-port', "$Port", '-no-boot-anim', '-no-snapshot-save', '-gpu', 'auto')
-    if ($Headless) { $args += '-no-window' }
-    Start-Process -FilePath $Emulator -ArgumentList $args -WindowStyle Hidden | Out-Null
+    $args = @('-avd', $Name, '-port', "$Port", '-no-boot-anim', '-no-snapshot-load', '-no-snapshot-save', '-gpu', 'auto')
+    if ($Headless) {
+        $args += @('-no-window', '-no-audio')
+        Start-Process -FilePath $Emulator -ArgumentList $args -WindowStyle Hidden | Out-Null
+    } else {
+        Start-Process -FilePath $Emulator -ArgumentList $args | Out-Null
+    }
     Wait-ForBoot
     Set-Oww221Runtime
 }
@@ -171,7 +184,6 @@ function Install-WatchApp {
     foreach ($permission in $permissions) {
         & $Adb -s $Serial shell pm grant $AppId $permission 2>$null | Out-Null
     }
-    & $Adb -s $Serial shell cmd appops set $AppId ACCESS_BACKGROUND_LOCATION allow 2>$null | Out-Null
     Invoke-Adb @('shell', 'am', 'force-stop', $AppId) | Out-Null
     Invoke-Adb @('shell', 'monkey', '-p', $AppId, '-c', 'android.intent.category.LAUNCHER', '1') | Out-Null
     Start-Sleep -Seconds 3
@@ -209,7 +221,11 @@ function Save-Evidence {
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $dir = Join-Path $EvidenceRoot $stamp
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
-    & $Adb -s $Serial exec-out screencap -p > (Join-Path $dir 'screen.png')
+    $remoteScreenshot = '/data/local/tmp/oww221-avd-screen.png'
+    Invoke-Adb @('shell', 'screencap', '-p', $remoteScreenshot) | Out-Null
+    & $Adb -s $Serial pull $remoteScreenshot (Join-Path $dir 'screen.png') | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to pull emulator screenshot.' }
+    Invoke-Adb @('shell', 'rm', '-f', $remoteScreenshot) | Out-Null
     @(
         "capturedAt=$(Get-Date -Format o)",
         "serial=$Serial",

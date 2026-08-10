@@ -40,6 +40,11 @@ final class PhoneSleepSync {
     }
 
     static JSONObject runSingleFlight(FetchOperation operation) throws Exception {
+        return runSingleFlight(operation, null);
+    }
+
+    static JSONObject runSingleFlight(FetchOperation operation, Runnable joinedObserver)
+            throws Exception {
         CompletableFuture<JSONObject> shared;
         boolean owner = false;
         synchronized (FETCH_LOCK) {
@@ -48,6 +53,8 @@ final class PhoneSleepSync {
                 shared = new CompletableFuture<>();
                 activeFetch = shared;
                 owner = true;
+            } else if (joinedObserver != null) {
+                joinedObserver.run();
             }
         }
         if (owner) {

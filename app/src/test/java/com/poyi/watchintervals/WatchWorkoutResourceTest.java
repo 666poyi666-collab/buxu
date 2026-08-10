@@ -87,6 +87,27 @@ public class WatchWorkoutResourceTest {
         assertTrue(training.contains("transientCueTracker.reset()"));
     }
 
+    @Test public void pagerAndCompactActionsKeepTheirAccessibilityContracts() throws Exception {
+        Path root = repositoryRoot();
+        String pager = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/WatchPagerLayout.java"));
+        String ui = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/Ui.java"));
+
+        assertTrue(pager.contains("ACTION_SCROLL_FORWARD"));
+        assertTrue(pager.contains("ACTION_SCROLL_BACKWARD"));
+        assertTrue(pager.contains("ACTION_SCROLL_LEFT"));
+        assertTrue(pager.contains("ACTION_SCROLL_RIGHT"));
+        assertTrue(pager.contains("@Override public boolean performClick()"));
+        assertTrue(pager.contains("info.setStateDescription(accessibilityPageStatus())"));
+        assertTrue(pager.contains("IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS"));
+        assertTrue(pager.contains("TYPE_VIEW_SCROLLED"));
+        assertTrue(ui.contains("private static final float MIN_TOUCH_TARGET = 40f"));
+        assertTrue(ui.contains("Math.max(getMeasuredWidth(), minimumTarget)"));
+        assertTrue(ui.contains("Math.max(getMeasuredHeight(), minimumTarget)"));
+        assertTrue(ui.contains("getConfiguration().fontScale"));
+    }
+
     private static String activityDeclaration(String manifest, String activityName) {
         int name = manifest.indexOf("android:name=\"" + activityName + "\"");
         assertTrue("activity missing: " + activityName, name >= 0);

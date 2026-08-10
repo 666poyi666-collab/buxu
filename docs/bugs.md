@@ -541,6 +541,61 @@
 - 防复发测试：纯 Java UX policy 测试覆盖主页/其他 Activity/训练页 top activity、活动/停止会话、提示时长/交互属性、恢复基线和阶段/公里同帧去重；资源合同固定恢复 Intent、通知单色图标和双端 launcher；WT-003/007/008 增加阶段切换与息屏亮屏路径。
 - 验证：Watch 57/57 测试、Lint 0 error 与 debug 构建通过。2026-08-04 OWW221 USB 覆盖安装后冷启动在存在可恢复会话时直接进入 `TrainingActivity`，设备回读 APK 字节一致；这只覆盖 WT-027 的启动器/恢复入口一部分，阶段边界、息屏亮屏和通知入口仍需执行 WT-026/027 后才能转 `Verified`。
 
+### BUG-053：手表危险确认层可穿透且详情右滑越级退出
+
+- 状态：Fixed，待 WT-028 真机
+- 严重度：P1
+- 影响：Watch 0.22.0（33）候选
+- 复现：在训练结束确认或历史删除确认出现后使用 TalkBack/系统返回/右滑，背景控件仍可能进入可访问焦点或响应返回；历史详情右滑直接结束 Activity，没有先回到历史列表。若用户在 `TrainingActivity` 尚未完成 Service bind 时确认结束，动作还可能没有投递。
+- 根因：确认面板只切换可见性，没有把背景 subtree 从触摸和无障碍树隔离；返回入口各自处理，没有共享“确认层优先、详情其次、Activity 最后”的层级策略；结束动作只在已有 binder 时直接调用，没有 pending dispatch。
+- 修复：训练和历史确认层打开时禁用并隐藏背景后代的可访问性，取消/确认后恢复；系统返回、标题返回和右滑共用层级策略，历史详情先回列表；结束改为可测试的 pending action，绑定完成后只投递一次，`WorkoutService` 仍是唯一状态所有者。
+- 防复发测试：`WatchInteractionPolicyTest` 覆盖确认门、返回优先级、详情/列表右滑和 pending stop；`WatchWorkoutResourceTest` 固定确认层隔离、TalkBack pager action、页码播报、离屏页面隐藏、40dp 触控下限和 font scale 合同。
+- 验证：`:app:testDebugUnitTest :app:lintDebug :app:assembleDebug --rerun-tasks` 通过；API 30 等价模拟环境和 OWW221 真机 WT-028 仍是转 `Verified` 的关闭条件。
+
+### BUG-054：三个睡眠入口会并发重复拉取同一 31 天窗口
+
+- 状态：Fixed，待 PT-030 真机
+- 严重度：P1
+- 影响：Phone 0.24.0（20）候选
+- 复现：连接恢复触发全量同步、用户进入睡眠页、后台 `PhoneSleepSyncWorker` 同时运行时，各自发起 5 页 `/v1/sleep`，BLE/LAN 被重复占用，较晚失败还可能用旧进度覆盖当前提示。
+- 根因：完整同步只有 UI 级 in-flight 门，睡眠分页器和 Worker 没有进程级 single-flight；三个入口共享缓存但不共享网络读取。
+- 修复：`PhoneSleepSync` 增加进程级 single-flight，首个调用拥有 31 天分页读取，其他入口等待并获取深拷贝结果；owner 的异常传播给全部等待者，完成或失败均清槽，下一次可重试。
+- 防复发测试：`PhoneSleepSyncTest` 使用确定性 join 观察点覆盖并发只调用一次、两个等待者取得同一记录、失败同时传播、清槽后再次成功。
+- 验证：Phone 118/118 JVM 测试、Lint 0 error 和 debug 构建通过；PT-030 需在真实 BLE/LAN 切换中确认只有一组分页请求。
+
+### BUG-055：LAN 批量读取失败后可能向未认证 BLE 直接重放
+
+- 状态：Fixed，待 PT-030 与 BLE 真机故障注入
+- 严重度：P1
+- 影响：Phone 0.24.0（20）候选
+- 复现：手机记住的 LAN 地址失效、蓝牙适配器可用但安全会话尚未建立时请求历史或睡眠；旧回退逻辑把“BLE 可用”当成“BLE 已认证”，直接重放后返回 `ble_not_authenticated`，并可能用新 TTL 延长已过期请求。
+- 根因：传输选择只检查 adapter/session availability，没有区分 `CONNECTED_BLE`/`DEGRADED_BLE` 与未认证状态；重建 `RequestEnvelope` 时按原始时长重新计时。
+- 修复：只有已认证 BLE 状态可直接重放，否则先 `connect()` 完成认证；仅 GET 可回退，写请求不自动重放；重试 TTL 使用原 `expiresAt` 减当前时间，过期立即返回首次 LAN 错误。
+- 防复发测试：`TransportFallbackPolicyTest` 覆盖认证状态集合、GET-only 和剩余 TTL；连接管理器通过相同 policy 执行回退。
+- 验证：Phone 118/118 JVM 测试、Lint 0 error 和 debug 构建通过；真实 LAN 断开、BLE 未连/已连与过期请求组合仍由 PT-030 验收。
+
+### BUG-056：手机计划编辑器部分操作低于 48dp 且缺少阶段语义
+
+- 状态：Fixed，待 PT-029 真机
+- 严重度：P2
+- 影响：Phone 0.24.0（20）候选
+- 复现：计划编辑器的保存、阶段类型、移除、前移和后移按钮高度为 44dp；TalkBack 只朗读“前移”“时间”等局部文字，无法判断操作的是第几个阶段或当前类型/单位。
+- 根因：计划页重构只调整了信息架构，没有把动态阶段行纳入全局 48dp 触控与上下文可访问名称合同。
+- 修复：相关按钮显式提升到 48dp；类型、目标单位、移除和移动操作加入阶段序号及当前值的中文 `contentDescription`。
+- 防复发测试：`PhonePlanAccessibilityTest` 固定关键触控尺寸和阶段上下文语义；PT-029 覆盖 1.0/1.3/2.0 font scale 与 TalkBack 顺序。
+- 验证：Phone 118/118 JVM 测试、Lint 0 error 和 debug 构建通过；真实手机 TalkBack/大字体仍按 PT-029 验收。
+
+### BUG-057：离线睡眠明细未排除系统备份和设备迁移
+
+- 状态：Fixed
+- 严重度：P1
+- 影响：Phone 0.23.0 至 0.24.0 首轮候选
+- 复现：检查 `backup_rules.xml` 与 `data_extraction_rules.xml`；凭据、Cloud state 和连接配置均已排除，但新加入的 `phone_sleep_cache.xml` 不在排除表，系统可能把最近 31 天完整 record/session/stage 纳入 Auto Backup 或设备迁移。
+- 根因：睡眠 offline-first 缓存作为新 SharedPreferences schema 加入时，只更新了存储和展示测试，没有同步扩展备份数据分类合同。
+- 修复：legacy backup 排除一次；Android 12+ `cloud-backup` 和 `device-transfer` 各显式排除一次 `phone_sleep_cache.xml`。缓存仍只在本机供离线页面和受控同步读取。
+- 防复发测试：`PhoneBackupPrivacyTest` 固定三个排除位置及 Android 12+ 两个域，缓存文件名变化时测试必须同步更新。
+- 验证：Phone JVM、Lint、debug/release 构建通过；资源合同不依赖真机厂商行为，可标记 Fixed，发布前仍按 PT-031 抽检 manifest/resource merge 结果。
+
 ## 2. 早期历史项
 
 以下记录依据源码注释、README 和本地回归文件名重建；精确修复提交在首个 Git 提交之前不存在，因此证据等级低于后续规范化记录。

@@ -7,7 +7,7 @@
 ```text
 手表 WorkoutService / HistoryStore / SystemSleepBridge
   <-> 安全 BLE 主链路（LAN 仅加速）
-手机 Phone 0.23.0
+手机 Phone 0.24.0
   -> HTTPS POST /sync/v3/exchange（Device Bearer Token）
   -> WSS /sync/v3/channel（只接收 sync_needed）
   -> D1 V3 authority
@@ -15,7 +15,7 @@
   -> ChatGPT
 ```
 
-手机分别保存 Cloud V3 outbox/cursor/receipt/conflict 与 Phone→Watch 可重建 projection journal，并用 Android Keystore 包装 device token。云端是计划主版本；手表 `WorkoutService` 仍是活动训练状态唯一权威。V2 源码/state 暂时保留用于迁移回退，但 Phone 0.23.0 不启用、不双写，也不会在 V3 失败时自动退回。
+手机分别保存 Cloud V3 outbox/cursor/receipt/conflict 与 Phone→Watch 可重建 projection journal，并用 Android Keystore 包装 device token。云端是计划主版本；手表 `WorkoutService` 仍是活动训练状态唯一权威。V2 源码/state 暂时保留用于迁移回退，但 Phone 0.24.0 不启用、不双写，也不会在 V3 失败时自动退回。
 
 ## 云端保存范围
 

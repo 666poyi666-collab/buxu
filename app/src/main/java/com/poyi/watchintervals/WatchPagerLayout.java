@@ -167,9 +167,11 @@ final class WatchPagerLayout extends ViewGroup {
         }
         if (currentItem > 0) {
             info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD);
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT);
         }
         if (currentItem + 1 < count) {
             info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD);
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT);
         }
     }
 
@@ -189,16 +191,24 @@ final class WatchPagerLayout extends ViewGroup {
     }
 
     @Override public boolean performAccessibilityAction(int action, Bundle arguments) {
-        if (action == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+        if ((action == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                || action == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT.getId())
                 && currentItem + 1 < getChildCount()) {
             setCurrentItem(currentItem + 1, true);
             return true;
         }
-        if (action == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD && currentItem > 0) {
+        if ((action == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+                || action == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT.getId())
+                && currentItem > 0) {
             setCurrentItem(currentItem - 1, true);
             return true;
         }
         return super.performAccessibilityAction(action, arguments);
+    }
+
+    @Override public boolean performClick() {
+        super.performClick();
+        return true;
     }
 
     private void dispatchPageChangedForAccessibility() {
@@ -334,6 +344,10 @@ final class WatchPagerLayout extends ViewGroup {
                 }
 
                 float travel = event.getX() - downX;
+                if (action == MotionEvent.ACTION_UP && Math.abs(travel) <= touchSlop
+                        && Math.abs(event.getY() - downY) <= touchSlop) {
+                    performClick();
+                }
                 float commitDistance = Math.max(touchSlop * 2f, getWidth() * 0.16f);
                 int page;
                 if (action != MotionEvent.ACTION_CANCEL && Math.abs(travel) >= commitDistance) {

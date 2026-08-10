@@ -45,6 +45,7 @@ public class PhoneSleepSyncTest {
     @Test public void concurrentForegroundAndWorkerRefreshShareOneFetch() throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch fetchStarted = new CountDownLatch(1);
+        CountDownLatch secondJoined = new CountDownLatch(1);
         CountDownLatch releaseFetch = new CountDownLatch(1);
         AtomicInteger calls = new AtomicInteger();
         PhoneSleepSync.FetchOperation operation = () -> {
@@ -57,7 +58,9 @@ public class PhoneSleepSyncTest {
         try {
             Future<JSONObject> first = executor.submit(() -> PhoneSleepSync.runSingleFlight(operation));
             assertTrue(fetchStarted.await(2, TimeUnit.SECONDS));
-            Future<JSONObject> second = executor.submit(() -> PhoneSleepSync.runSingleFlight(operation));
+            Future<JSONObject> second = executor.submit(() -> PhoneSleepSync.runSingleFlight(
+                    operation, secondJoined::countDown));
+            assertTrue(secondJoined.await(2, TimeUnit.SECONDS));
             releaseFetch.countDown();
 
             assertEquals(42L, first.get(2, TimeUnit.SECONDS).getJSONArray("records")
@@ -67,6 +70,50 @@ public class PhoneSleepSyncTest {
             assertEquals(1, calls.get());
         } finally {
             executor.shutdownNow();
+        }
+    }
+
+    @Test public void sharedFailureReachesAllCallersAndNextRefreshCanRetry() throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch fetchStarted = new CountDownLatch(1);
+        CountDownLatch secondJoined = new CountDownLatch(1);
+        CountDownLatch releaseFetch = new CountDownLatch(1);
+        AtomicInteger calls = new AtomicInteger();
+        PhoneSleepSync.FetchOperation failing = () -> {
+            calls.incrementAndGet();
+            fetchStarted.countDown();
+            assertTrue(releaseFetch.await(2, TimeUnit.SECONDS));
+            throw new IllegalStateException("sleep_transport_failed");
+        };
+        try {
+            Future<JSONObject> first = executor.submit(() -> PhoneSleepSync.runSingleFlight(failing));
+            assertTrue(fetchStarted.await(2, TimeUnit.SECONDS));
+            Future<JSONObject> second = executor.submit(() -> PhoneSleepSync.runSingleFlight(
+                    failing, secondJoined::countDown));
+            assertTrue(secondJoined.await(2, TimeUnit.SECONDS));
+            releaseFetch.countDown();
+            assertFutureFailure(first, "sleep_transport_failed");
+            assertFutureFailure(second, "sleep_transport_failed");
+            assertEquals(1, calls.get());
+
+            JSONObject recovered = PhoneSleepSync.runSingleFlight(() -> {
+                calls.incrementAndGet();
+                return new JSONObject().put("state", "ready").put("records", new JSONArray());
+            });
+            assertEquals("ready", recovered.getString("state"));
+            assertEquals(2, calls.get());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private static void assertFutureFailure(Future<JSONObject> future, String message)
+            throws Exception {
+        try {
+            future.get(2, TimeUnit.SECONDS);
+            throw new AssertionError("expected fetch failure");
+        } catch (java.util.concurrent.ExecutionException error) {
+            assertEquals(message, error.getCause().getMessage());
         }
     }
 
