@@ -9,14 +9,23 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 /** Fetches the 31-day sleep window in bounded pages so BLE never carries one giant response. */
 final class PhoneSleepSync {
     static final int PAGE_DAYS = 7;
+    private static final Object FETCH_LOCK = new Object();
+    private static CompletableFuture<JSONObject> activeFetch;
 
     private PhoneSleepSync() {}
 
     static JSONObject fetchRecent(WatchConnectionManager manager, int requestedDays)
+            throws Exception {
+        return runSingleFlight(() -> fetchPages(manager, requestedDays));
+    }
+
+    private static JSONObject fetchPages(WatchConnectionManager manager, int requestedDays)
             throws Exception {
         int days = Math.max(1, Math.min(31, requestedDays));
         JSONArray pages = new JSONArray();
@@ -28,6 +37,43 @@ final class PhoneSleepSync {
             pages.put(page);
         }
         return mergePages(pages, days, System.currentTimeMillis());
+    }
+
+    static JSONObject runSingleFlight(FetchOperation operation) throws Exception {
+        CompletableFuture<JSONObject> shared;
+        boolean owner = false;
+        synchronized (FETCH_LOCK) {
+            shared = activeFetch;
+            if (shared == null) {
+                shared = new CompletableFuture<>();
+                activeFetch = shared;
+                owner = true;
+            }
+        }
+        if (owner) {
+            try {
+                JSONObject result = operation.fetch();
+                shared.complete(new JSONObject(result.toString()));
+            } catch (Throwable error) {
+                shared.completeExceptionally(error);
+            } finally {
+                synchronized (FETCH_LOCK) {
+                    if (activeFetch == shared) activeFetch = null;
+                }
+            }
+        }
+        try {
+            return new JSONObject(shared.get().toString());
+        } catch (ExecutionException error) {
+            Throwable cause = error.getCause();
+            if (cause instanceof Exception) throw (Exception) cause;
+            if (cause instanceof Error) throw (Error) cause;
+            throw new IllegalStateException(cause);
+        }
+    }
+
+    interface FetchOperation {
+        JSONObject fetch() throws Exception;
     }
 
     static JSONObject mergePages(JSONArray pages, int requestedDays, long fetchedAt)

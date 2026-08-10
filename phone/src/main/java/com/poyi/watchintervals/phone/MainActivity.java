@@ -243,7 +243,7 @@ public class MainActivity extends Activity {
         LinearLayout editorHeader=new LinearLayout(this);editorHeader.setGravity(Gravity.CENTER_VERTICAL);
         Button closeEditor=button("返回详情",Color.TRANSPARENT,Palette.MOVE);closeEditor.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);
         closeEditor.setContentDescription("返回安排详情");editorHeader.addView(closeEditor,new LinearLayout.LayoutParams(0,dp(48),1));
-        Button saveTop=button("保存",Palette.EXERCISE,Palette.INK);editorHeader.addView(saveTop,new LinearLayout.LayoutParams(dp(72),dp(44)));
+        Button saveTop=button("保存",Palette.EXERCISE,Palette.INK);editorHeader.addView(saveTop,new LinearLayout.LayoutParams(dp(72),dp(48)));
         planEditorPanel.addView(editorHeader);
         planEditorTitle=text("编辑安排",28,true,Palette.TEXT);planEditorPanel.addView(planEditorTitle);
         planEditorPanel.addView(text("安排信息",16,true,Palette.TEXT));
@@ -700,22 +700,26 @@ public class MainActivity extends Activity {
             order.setGravity(Gravity.CENTER);order.setBackground(rounded(Palette.CARD_DEEP,12));
             header.addView(order,new LinearLayout.LayoutParams(dp(38),dp(38)));
             Button kindButton=button(kindName(kind),kindColor(kind),kindTextColor(kind));
-            LinearLayout.LayoutParams kindParams=new LinearLayout.LayoutParams(0,dp(44),1);kindParams.leftMargin=dp(8);header.addView(kindButton,kindParams);
+            kindButton.setContentDescription("修改第"+(position+1)+"阶段类型，当前"+kindName(kind));
+            LinearLayout.LayoutParams kindParams=new LinearLayout.LayoutParams(0,dp(48),1);kindParams.leftMargin=dp(8);header.addView(kindButton,kindParams);
             Button delete=button("移除",Color.TRANSPARENT,Palette.RED);delete.setContentDescription("移除第"+(position+1)+"阶段");
-            header.addView(delete,new LinearLayout.LayoutParams(dp(64),dp(44)));stageCard.addView(header);
+            header.addView(delete,new LinearLayout.LayoutParams(dp(64),dp(48)));stageCard.addView(header);
             TextView targetLabel=text("目标",12,true,Palette.TEXT_DIM);stageCard.addView(targetLabel);
             LinearLayout targetRow=new LinearLayout(this);targetRow.setGravity(Gravity.CENTER_VERTICAL);
             EditText value=input(""); value.setText(String.valueOf(Math.max(1,target))); value.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
             LinearLayout.LayoutParams valueParams=new LinearLayout.LayoutParams(0,dp(52),1);targetRow.addView(value,valueParams);
             Button unitButton=button("DISTANCE".equals(unit)?"距离 · 米":"时间 · 秒",Palette.CARD_HIGH,Palette.TEXT);unitButton.setTextSize(13);
+            unitButton.setContentDescription("修改第"+(position+1)+"阶段目标单位，当前"+("DISTANCE".equals(unit)?"距离":"时间"));
             LinearLayout.LayoutParams unitParams=new LinearLayout.LayoutParams(dp(112),dp(52));unitParams.leftMargin=dp(8);targetRow.addView(unitButton,unitParams);
             stageCard.addView(targetRow);
             LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.END);
             Button up=button("前移",Palette.CARD_HIGH,Palette.TEXT_DIM);
             Button down=button("后移",Palette.CARD_HIGH,Palette.TEXT_DIM);
+            up.setContentDescription("前移第"+(position+1)+"阶段");
+            down.setContentDescription("后移第"+(position+1)+"阶段");
             up.setEnabled(position>0); down.setEnabled(position<stages.size()-1);
-            actions.addView(up,new LinearLayout.LayoutParams(dp(76),dp(44)));
-            LinearLayout.LayoutParams downParams=new LinearLayout.LayoutParams(dp(76),dp(44));downParams.leftMargin=dp(6);actions.addView(down,downParams);
+            actions.addView(up,new LinearLayout.LayoutParams(dp(76),dp(48)));
+            LinearLayout.LayoutParams downParams=new LinearLayout.LayoutParams(dp(76),dp(48));downParams.leftMargin=dp(6);actions.addView(down,downParams);
             if(stages.size()>1)stageCard.addView(actions);
             value.addTextChangedListener(new android.text.TextWatcher(){
                 public void beforeTextChanged(CharSequence s,int start,int count,int after){}

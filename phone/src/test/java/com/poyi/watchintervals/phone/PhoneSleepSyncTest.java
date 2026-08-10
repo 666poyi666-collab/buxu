@@ -8,6 +8,13 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
 public class PhoneSleepSyncTest {
     @Test public void boundedPagesMergeSortAndDeduplicateBoundaryRecords() throws Exception {
         JSONObject newest = record(300L);
@@ -33,6 +40,34 @@ public class PhoneSleepSyncTest {
 
         assertFalse(merged.getBoolean("complete"));
         assertTrue(merged.getBoolean("hasMore"));
+    }
+
+    @Test public void concurrentForegroundAndWorkerRefreshShareOneFetch() throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch fetchStarted = new CountDownLatch(1);
+        CountDownLatch releaseFetch = new CountDownLatch(1);
+        AtomicInteger calls = new AtomicInteger();
+        PhoneSleepSync.FetchOperation operation = () -> {
+            calls.incrementAndGet();
+            fetchStarted.countDown();
+            assertTrue(releaseFetch.await(2, TimeUnit.SECONDS));
+            return new JSONObject().put("state", "ready")
+                    .put("records", new JSONArray().put(record(42L)));
+        };
+        try {
+            Future<JSONObject> first = executor.submit(() -> PhoneSleepSync.runSingleFlight(operation));
+            assertTrue(fetchStarted.await(2, TimeUnit.SECONDS));
+            Future<JSONObject> second = executor.submit(() -> PhoneSleepSync.runSingleFlight(operation));
+            releaseFetch.countDown();
+
+            assertEquals(42L, first.get(2, TimeUnit.SECONDS).getJSONArray("records")
+                    .getJSONObject(0).getLong("timestamp"));
+            assertEquals(42L, second.get(2, TimeUnit.SECONDS).getJSONArray("records")
+                    .getJSONObject(0).getLong("timestamp"));
+            assertEquals(1, calls.get());
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     private static JSONObject page(long start, long end, boolean complete, JSONArray records)

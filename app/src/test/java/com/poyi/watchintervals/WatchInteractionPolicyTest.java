@@ -11,11 +11,15 @@ import java.nio.file.Paths;
 import org.junit.Test;
 
 public class WatchInteractionPolicyTest {
-    @Test public void historyOnlyTreatsRightSwipeAsBack() {
+    @Test public void historyRightSwipeFollowsTheVisibleNavigationLevel() {
+        assertEquals(WatchInteractionPolicy.HistorySwipeAction.SHOW_LIST,
+                WatchInteractionPolicy.historySwipeAction(true, true));
         assertEquals(WatchInteractionPolicy.HistorySwipeAction.FINISH,
-                WatchInteractionPolicy.historySwipeAction(true));
+                WatchInteractionPolicy.historySwipeAction(true, false));
         assertEquals(WatchInteractionPolicy.HistorySwipeAction.STAY,
-                WatchInteractionPolicy.historySwipeAction(false));
+                WatchInteractionPolicy.historySwipeAction(false, true));
+        assertEquals(WatchInteractionPolicy.HistorySwipeAction.STAY,
+                WatchInteractionPolicy.historySwipeAction(false, false));
     }
 
     @Test public void destructiveActionCannotCommitWithoutVisibleConfirmation() {
@@ -54,11 +58,18 @@ public class WatchInteractionPolicyTest {
         assertTrue(history.contains("HistorySwipeAction.FINISH"));
         assertFalse(history.contains("new Intent(HistoryActivity.this, PlanActivity.class)"));
         assertTrue(history.contains("deleteConfirmationGate.confirm()"));
+        assertTrue(history.contains("IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS"));
+        assertTrue(history.contains("if (deleteConfirmationGate.isAwaitingConfirmation())"));
+        assertTrue(history.contains("deleteCancel.requestFocus()"));
 
         assertTrue(training.contains("stop.setOnClickListener(v -> confirmStop())"));
         assertFalse(training.contains("stop.setOnLongClickListener"));
         assertFalse(training.contains("长按结束"));
         assertTrue(training.contains("stopConfirmationGate.confirm()"));
+        assertTrue(training.contains("IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS"));
+        assertTrue(training.contains("stopCancel.requestFocus()"));
+        assertTrue(training.contains("setAction(WorkoutService.ACTION_STOP)"));
+        assertFalse(training.contains("if (service != null) service.finishAndStop()"));
 
         assertFalse(main.contains("FLAG_KEEP_SCREEN_ON"));
         assertFalse(main.contains("FLAG_TURN_SCREEN_ON"));

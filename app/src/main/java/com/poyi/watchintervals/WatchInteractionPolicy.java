@@ -2,12 +2,13 @@ package com.poyi.watchintervals;
 
 /** Small, Android-free interaction rules shared by destructive watch actions. */
 final class WatchInteractionPolicy {
-    enum HistorySwipeAction { FINISH, STAY }
+    enum HistorySwipeAction { SHOW_LIST, FINISH, STAY }
 
     private WatchInteractionPolicy() {}
 
-    static HistorySwipeAction historySwipeAction(boolean swipedRight) {
-        return swipedRight ? HistorySwipeAction.FINISH : HistorySwipeAction.STAY;
+    static HistorySwipeAction historySwipeAction(boolean swipedRight, boolean detailVisible) {
+        if (!swipedRight) return HistorySwipeAction.STAY;
+        return detailVisible ? HistorySwipeAction.SHOW_LIST : HistorySwipeAction.FINISH;
     }
 
     /**

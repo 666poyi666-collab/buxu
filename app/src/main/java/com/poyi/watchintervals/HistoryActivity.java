@@ -5,6 +5,7 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -19,6 +20,11 @@ public class HistoryActivity extends Activity {
     private SwipeTracker swipeTracker;
     private final WatchInteractionPolicy.ConfirmationGate deleteConfirmationGate =
             new WatchInteractionPolicy.ConfirmationGate();
+    private View detailScrim;
+    private LinearLayout deleteConfirmation;
+    private TextView deleteAction;
+    private TextView deleteCancel;
+    private ScrollView detailScroll;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -175,30 +181,46 @@ public class HistoryActivity extends Activity {
             org.json.JSONArray stages=json.optJSONArray("stageResults");if(stages!=null&&stages.length()>0){LinearLayout card=detailCard("训练阶段");for(int i=0;i<stages.length();i++){org.json.JSONObject stage=stages.getJSONObject(i);card.addView(detailLine(stage.optInt("index")+"  "+stage.optString("name"),Format.duration(stage.optLong("completedAtMs"))));}page.addView(card,sectionParams());}
         } catch(Exception ignored) {}
         TextView delete = Ui.action(this, "删除本次记录", 15, Ui.RED, Ui.PANEL);
+        deleteAction = delete;
         LinearLayout.LayoutParams deleteParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 48));
         deleteParams.topMargin = Ui.dp(this, 12); page.addView(delete, deleteParams);
-        LinearLayout deleteConfirmation = buildDeleteConfirmation(record, delete);
-        LinearLayout.LayoutParams confirmationParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 128));
-        confirmationParams.topMargin = Ui.dp(this, 12); page.addView(deleteConfirmation, confirmationParams);
-        delete.setOnClickListener(v -> {
-            deleteConfirmationGate.request();
-            delete.setVisibility(View.GONE);
-            deleteConfirmation.setVisibility(View.VISIBLE);
-            deleteConfirmation.requestFocus();
-        });
-        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(false);scroll.addView(page,new ScrollView.LayoutParams(-1,-2));setContentView(scroll);
+        delete.setOnClickListener(v -> showDeleteConfirmation());
+        detailScroll = new ScrollView(this);
+        detailScroll.setFillViewport(true);
+        detailScroll.setVerticalScrollBarEnabled(false);
+        detailScroll.addView(page, new ScrollView.LayoutParams(-1, -2));
+
+        FrameLayout shell = new FrameLayout(this);
+        shell.addView(detailScroll, new FrameLayout.LayoutParams(-1, -1));
+        detailScrim = new View(this);
+        detailScrim.setBackgroundColor(android.graphics.Color.argb(190, 0, 0, 0));
+        detailScrim.setClickable(true);
+        detailScrim.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        detailScrim.setVisibility(View.GONE);
+        detailScrim.setOnClickListener(v -> hideDeleteConfirmation());
+        shell.addView(detailScrim, new FrameLayout.LayoutParams(-1, -1));
+        deleteConfirmation = buildDeleteConfirmation(record);
+        FrameLayout.LayoutParams confirmationParams =
+                new FrameLayout.LayoutParams(-1, Ui.dp(this, 140), Gravity.BOTTOM);
+        confirmationParams.leftMargin = Ui.dp(this, 12);
+        confirmationParams.rightMargin = Ui.dp(this, 12);
+        confirmationParams.bottomMargin = Ui.dp(this, 10);
+        shell.addView(deleteConfirmation, confirmationParams);
+        setContentView(shell);
     }
 
-    private LinearLayout buildDeleteConfirmation(WorkoutRecord record, TextView deleteAction) {
+    private LinearLayout buildDeleteConfirmation(WorkoutRecord record) {
         LinearLayout panel = Ui.card(this);
         panel.setVisibility(View.GONE);
         panel.setFocusable(true);
+        panel.setAccessibilityPaneTitle("删除记录确认");
         panel.addView(Ui.bold(this, "删除这次记录？", 17, Ui.WHITE),
                 new LinearLayout.LayoutParams(-1, Ui.dp(this, 26)));
         panel.addView(Ui.text(this, "删除后无法恢复", Ui.CAPTION, Ui.MUTED),
                 new LinearLayout.LayoutParams(-1, Ui.dp(this, 24)));
         LinearLayout choices = new LinearLayout(this);
         TextView cancel = Ui.action(this, "取消", 14, Ui.WHITE, Ui.PANEL_ACTIVE);
+        deleteCancel = cancel;
         TextView confirm = Ui.action(this, "确认删除", 14, Ui.WHITE, Ui.RED);
         LinearLayout.LayoutParams cancelParams =
                 new LinearLayout.LayoutParams(0, Ui.dp(this, 46), 1);
@@ -206,12 +228,7 @@ public class HistoryActivity extends Activity {
         choices.addView(cancel, cancelParams);
         choices.addView(confirm, new LinearLayout.LayoutParams(0, Ui.dp(this, 46), 1));
         panel.addView(choices);
-        cancel.setOnClickListener(v -> {
-            deleteConfirmationGate.cancel();
-            panel.setVisibility(View.GONE);
-            deleteAction.setVisibility(View.VISIBLE);
-            deleteAction.requestFocus();
-        });
+        cancel.setOnClickListener(v -> hideDeleteConfirmation());
         confirm.setOnClickListener(v -> {
             if (!deleteConfirmationGate.confirm()) return;
             HistoryStore.delete(this, record.id);
@@ -220,9 +237,36 @@ public class HistoryActivity extends Activity {
         return panel;
     }
 
+    private void showDeleteConfirmation() {
+        if (deleteConfirmation == null) return;
+        deleteConfirmationGate.request();
+        if (detailScroll != null) {
+            detailScroll.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        }
+        if (detailScrim != null) detailScrim.setVisibility(View.VISIBLE);
+        deleteConfirmation.setVisibility(View.VISIBLE);
+        if (deleteCancel != null) deleteCancel.requestFocus();
+    }
+
+    private void hideDeleteConfirmation() {
+        deleteConfirmationGate.cancel();
+        if (deleteConfirmation != null) deleteConfirmation.setVisibility(View.GONE);
+        if (detailScrim != null) detailScrim.setVisibility(View.GONE);
+        if (detailScroll != null) {
+            detailScroll.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        }
+        if (deleteAction != null) deleteAction.requestFocus();
+    }
+
     private void handleHistorySwipe(boolean swipedRight) {
-        if (WatchInteractionPolicy.historySwipeAction(swipedRight)
-                == WatchInteractionPolicy.HistorySwipeAction.FINISH) finish();
+        if (deleteConfirmationGate.isAwaitingConfirmation()) {
+            if (swipedRight) hideDeleteConfirmation();
+            return;
+        }
+        WatchInteractionPolicy.HistorySwipeAction action =
+                WatchInteractionPolicy.historySwipeAction(swipedRight, selected != null);
+        if (action == WatchInteractionPolicy.HistorySwipeAction.SHOW_LIST) showList();
+        else if (action == WatchInteractionPolicy.HistorySwipeAction.FINISH) finish();
     }
 
     /** Duration, pace and heart rate — the line a runner scans a log by. Steps only stand in
@@ -283,7 +327,11 @@ public class HistoryActivity extends Activity {
                 && first.get(Calendar.DAY_OF_YEAR) == second.get(Calendar.DAY_OF_YEAR);
     }
 
-    @Override public void onBackPressed() { if (selected != null) showList(); else super.onBackPressed(); }
+    @Override public void onBackPressed() {
+        if (deleteConfirmationGate.isAwaitingConfirmation()) hideDeleteConfirmation();
+        else if (selected != null) showList();
+        else super.onBackPressed();
+    }
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
         if (swipeTracker != null) swipeTracker.observe(event);
         return super.dispatchTouchEvent(event);

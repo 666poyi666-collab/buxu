@@ -71,17 +71,28 @@ public final class WatchConnectionManager {
         first.whenComplete((response,error)->{
             if(error==null){result.complete(response);return;}
             // A remembered LAN address can outlive the Wi-Fi session. Mark it degraded and
-            // replay only idempotent reads over the already-authenticated BLE link.
+            // replay only idempotent reads after an authenticated BLE session is available.
             lanVerified=false;
-            if(state==ConnectionState.CONNECTED_LAN||state==ConnectionState.CONNECTED_BLE_LAN)
+            ConnectionState fallbackState=state;
+            if(TransportFallbackPolicy.isBleSessionReady(fallbackState))
                 setState(ConnectionState.CONNECTED_BLE,"lan_request_failed");
-            long retryTtl=request.expiresAt<=0L?0L:Math.max(5_000L,
-                    request.expiresAt-request.createdAt);
-            RequestEnvelope retry=RequestEnvelope.create(request.method,request.path,
-                    request.body,retryTtl);
-            ble.request(retry).whenComplete((bleResponse,bleError)->{
-                if(bleError==null)result.complete(bleResponse);
-                else result.completeExceptionally(error);
+            else publish();
+            CompletableFuture<TransportSession> ready=
+                    TransportFallbackPolicy.isBleSessionReady(fallbackState)
+                            ?CompletableFuture.completedFuture(null):ble.connect();
+            ready.whenComplete((ignored,connectError)->{
+                if(connectError!=null){result.completeExceptionally(error);return;}
+                long retryTtl=TransportFallbackPolicy.remainingTtl(request.expiresAt,
+                        System.currentTimeMillis());
+                if(request.expiresAt>0L&&retryTtl<=0L){
+                    result.completeExceptionally(error);return;
+                }
+                RequestEnvelope retry=RequestEnvelope.create(request.method,request.path,
+                        request.body,retryTtl);
+                ble.request(retry).whenComplete((bleResponse,bleError)->{
+                    if(bleError==null)result.complete(bleResponse);
+                    else result.completeExceptionally(error);
+                });
             });
         });
         return result;

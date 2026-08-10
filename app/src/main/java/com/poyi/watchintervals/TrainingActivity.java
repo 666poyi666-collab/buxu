@@ -46,6 +46,7 @@ public class TrainingActivity extends Activity {
             new java.text.SimpleDateFormat("HH:mm", Locale.CHINA);
     private final Handler handler = new Handler(Looper.getMainLooper());
     private TextView stageName, remaining, remainingLabel, stageProgress, stageCounter, gps, distance, pace, heart, steps, duration, pause, stop;
+    private TextView stopCancel;
     private TextView coreHeader, speed, controlState, controlDuration, controlSummary;
     private TextView trainClock, extraClock;
     private TextView avgPace, cadence, climb, calories, averageHeart, maxHeart, maxSpeed;
@@ -450,12 +451,15 @@ public class TrainingActivity extends Activity {
         panel.setPadding(Ui.dp(this, 16), Ui.dp(this, 12), Ui.dp(this, 16), Ui.dp(this, 12));
         panel.setBackground(Ui.background(this, Ui.PANEL_ACTIVE, 24));
         panel.setVisibility(View.GONE);
+        panel.setFocusable(true);
+        panel.setAccessibilityPaneTitle("结束训练确认");
         TextView title = Ui.bold(this, "结束本次训练？", 19, Ui.WHITE);
         panel.addView(title, new LinearLayout.LayoutParams(-1, Ui.dp(this, 30)));
         TextView hint = Ui.text(this, "记录会立即停止", 12, Ui.MUTED);
         panel.addView(hint, new LinearLayout.LayoutParams(-1, Ui.dp(this, 24)));
         LinearLayout choices = new LinearLayout(this);
         TextView cancel = Ui.action(this, "继续训练", 15, Ui.BLACK, Ui.LIME);
+        stopCancel = cancel;
         TextView confirm = Ui.action(this, "结束", 15, Ui.WHITE, Ui.RED);
         LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(0, Ui.dp(this, 46), 1);
         cancelParams.rightMargin = Ui.dp(this, 7);
@@ -723,15 +727,22 @@ public class TrainingActivity extends Activity {
     private void confirmStop() {
         if (stopConfirmation == null) return;
         stopConfirmationGate.request();
+        if (workoutPager != null) {
+            workoutPager.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        }
         if (stopScrim != null) stopScrim.setVisibility(View.VISIBLE);
         stopConfirmation.setVisibility(View.VISIBLE);
-        stopConfirmation.requestFocus();
+        if (stopCancel != null) stopCancel.requestFocus();
     }
 
     private void hideStopConfirmation() {
         stopConfirmationGate.cancel();
         if (stopConfirmation != null) stopConfirmation.setVisibility(View.GONE);
         if (stopScrim != null) stopScrim.setVisibility(View.GONE);
+        if (workoutPager != null) {
+            workoutPager.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+            workoutPager.requestFocus();
+        }
     }
 
     private void showRoute() {
@@ -744,12 +755,17 @@ public class TrainingActivity extends Activity {
 
     private void stopAndFinish() {
         if (!stopConfirmationGate.confirm()) return;
-        if (service != null) service.finishAndStop();
+        // The binding may disappear briefly while Android reconnects the Activity. Always send
+        // the command to the state owner instead of closing the UI and leaving the workout alive.
+        startService(new Intent(this, WorkoutService.class).setAction(WorkoutService.ACTION_STOP));
         finish();
     }
     @Override public void onBackPressed() {
+        if (stopConfirmation != null && stopConfirmation.getVisibility() == View.VISIBLE) {
+            hideStopConfirmation();
+            return;
+        }
         if (workoutPager != null && workoutPager.getCurrentItem() != 1) { workoutPager.setCurrentItem(1, true); return; }
-        if (stopConfirmation != null && stopConfirmation.getVisibility() == View.VISIBLE) hideStopConfirmation();
-        else confirmStop();
+        confirmStop();
     }
 }
