@@ -17,6 +17,15 @@
 
 功能、缺陷或架构发生变化时，代码提交必须同时更新对应文档；具体规则见文档索引。
 
+## 当前可下载候选
+
+GitHub [v0.22.0 prerelease](https://github.com/666poyi666-collab/WatchIntervals/releases/tag/v0.22.0) 提供当前 `main` 的可安装 debug 包：
+
+- [Watch 0.22.0（versionCode 33）](https://github.com/666poyi666-collab/WatchIntervals/releases/download/v0.22.0/WatchIntervals-watch-0.22.0-debug.apk)，SHA-256 `33C8D7974F12B72BC304E3594D2F15664483C639687666FB1CDCB62D0BC84F99`
+- [Phone 0.24.0（versionCode 20）](https://github.com/666poyi666-collab/WatchIntervals/releases/download/v0.22.0/WatchIntervals-phone-0.24.0-debug.apk)，SHA-256 `6F084635091650231FAF5972013A7C76DCDBFD9CCC3246AEBB014824A836EB84`
+
+两个 APK 使用同一 Android Debug 证书，可覆盖安装同一 debug 签名链。该版本仍是 prerelease，真机、户外传感器、Doze/重启和 Cloud V3 新版本门禁不以本地构建结果替代。
+
 当前版本支持：
 
 - 自定义跑步、快走、休息阶段，目标可按距离或时间设置

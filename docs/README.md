@@ -22,12 +22,12 @@
 
 | 项目 | 当前值 |
 | --- | --- |
-| 基线日期 | 2026-08-04 |
-| 手表应用 | `app`，`com.poyi.watchintervals`，`0.21.1`（32） |
-| 手机应用 | `phone`，`com.poyi.watchintervals.phone`，`0.23.0`（19） |
+| 基线日期 | 2026-08-18 |
+| 手表应用 | `app`，`com.poyi.watchintervals`，`0.22.0`（33） |
+| 手机应用 | `phone`，`com.poyi.watchintervals.phone`，`0.24.0`（20） |
 | 主要实机 | OPPO Watch 4 Pro，OWW221，378×496，Android 11 |
 | 编译环境 | JDK 17、Android SDK 35、Gradle 8.14.3 |
-| 发布状态 | Watch `0.21.1` / Phone `0.23.0` 最新候选已使用现有设备链的稳定 debug 证书重新构建，并于 2026-08-04 分别通过 USB 覆盖到 OWW221 与 Xiaomi xaga。两端首次安装时间和私有文件计数均保持不变，设备回读 APK 与本地产物 SHA-256 一致，进程正常运行；Watch 冷启动直接恢复现有 `TrainingActivity`。安装后 Phone↔Watch 自动建立 GATT、MTU 517、订阅与安全会话，证明一次基础重连成功。手机 OPPO 健康保持厂商原包，项目仍通过独立 Phone APK、独立 Watch APK 和手表 HealthKit bridge 工作；外部门禁为 PT-026/027/028、WT-026/027、BUG-016 的双端重启/蓝牙开关/长时门禁，以及既有户外 GNSS/心率与 Phone Doze/重启恢复 |
+| 发布状态 | 当前 GitHub [v0.22.0 prerelease](https://github.com/666poyi666-collab/WatchIntervals/releases/tag/v0.22.0) 提供 Watch `0.22.0`（33）和 Phone `0.24.0`（20）debug APK。2026-08-18 本地 Android 140 tasks、MCP 12 项、Lint、版本/签名/哈希和跟踪 Markdown 链接门禁通过；Watch APK SHA-256 为 `33C8D7974F12B72BC304E3594D2F15664483C639687666FB1CDCB62D0BC84F99`，Phone 为 `6F084635091650231FAF5972013A7C76DCDBFD9CCC3246AEBB014824A836EB84`。该候选不替代 OWW221/Xiaomi 真机、户外传感器、Doze/重启和 Cloud V3 新版本门禁，故保持 prerelease |
 
 ## 事实来源
 

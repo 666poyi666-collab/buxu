@@ -2,6 +2,15 @@
 
 本日志保存 Vibe Coding 过程中已经沉淀为产品/工程事实的内容。日期来自文件时间、版本化截图和当前 Git/Release 记录；首个 Git 提交之前的多轮改动没有逐次提交，因此以下按主题重建，不把截图版本号等同于正式发布版本。
 
+## 2026-08-18：当前双端候选推送与 GitHub 下载发布（REQ-RELEASE-20260818-001）
+
+- 目标：将当前 `main` 的 Watch `0.22.0`（33）和 Phone `0.24.0`（20）提供为公开、可直接下载的 GitHub 候选，同时保留未跟踪的用户文件 `项目总览.md`，不把 build/分析/虚拟环境产物纳入 Git。
+- 远端：基于源码父提交 `87aca9a9ac3f1ed18766f8fee8427fa9ac4f9e87`；本批只更新发布文档和版本事实，不修改训练、同步或设备运行代码。
+- 自动化：`gradlew.bat test lint :app:assembleDebug :phone:assembleDebug --rerun-tasks --no-daemon --stacktrace` 成功，140 actionable tasks；`pytest mcp\\tests -q` 为 12 passed；APK `aapt dump badging`、`apksigner verify --verbose --print-certs`、`git diff --check` 和 Git 跟踪 Markdown 本地链接检查通过。
+- 产物：Watch APK SHA-256 `33C8D7974F12B72BC304E3594D2F15664483C639687666FB1CDCB62D0BC84F99`；Phone APK SHA-256 `6F084635091650231FAF5972013A7C76DCDBFD9CCC3246AEBB014824A836EB84`。两个 APK 均为可安装的 Android Debug 签名，证书 SHA-256 为 `7EB76B41EE20B76E877282F63D5468C016F09AED4513F5985F524ED325915FCD`。
+- 发布：GitHub `v0.22.0` prerelease 上传双端 APK、`SHA-256.txt` 和 `build-info.json`；Release notes 明确该候选不替代 OWW221/Xiaomi 真机、户外 GNSS/心率、Phone Doze/重启和 Cloud V3 新版本门禁。
+- 边界：未安装 APK、未操作真实设备、未改 Cloud/D1/OAuth；工作区保留用户未跟踪文件，最终 Git 提交只包含跟踪文档。
+
 ## 2026-07-23：手表独立训练主流程
 
 - 建立 Android 手表应用和 378×496 竖屏布局。

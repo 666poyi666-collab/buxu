@@ -2,7 +2,7 @@
 
 本文件记录用户可感知的版本变化，格式参考 Keep a Changelog。手表端和手机端版本独立，在标题中分别标明。
 
-## [Watch 0.22.0 / Phone 0.24.0] - 未发布
+## [Watch 0.22.0 / Phone 0.24.0] - 2026-08-18
 
 ### Added
 
@@ -57,6 +57,10 @@
 
 - 前一正式 ChatGPT 候选已回读合成记录 `1200 m`、`2` 个分段（1000 m/300 s、200 m/60 s），随后通过产品命令删除并写 D1 tombstone；临时计划完成 Cloud→Phone→Watch 创建和反向删除，Phone/Watch revision 均为 4 且两类 outbox 为 0。本批 Watch/Phone JVM 44/87 项、双模块 lint/debug/release、Worker 10/5/8/39 项、Markdown 链接和 diff 门禁全绿，四个 APK 哈希记录在项目日志；目标 Watch 不在线，旧验收不冒充新 `revisionDomainId`/空库/ACK-loss/指定 planId/命令 journal 证据。
 - 手机 UI 批次通过双模块 `test/lint/assembleDebug`（140 tasks）、MCP pytest 12/12、Markdown 本地链接和差异检查；API 35 模拟器验证 1.0×/2.0× 字体、深色启动画面、V3 设置、浮动底栏与四目的地可访问名称。厂商字体、多启动器蒙版和主题图标仍按 PT-026/027 留在发布真机门禁。
+- 2026-08-18 当前候选门禁通过：`gradlew.bat test lint :app:assembleDebug :phone:assembleDebug --rerun-tasks --no-daemon --stacktrace` 成功，140 个 actionable tasks 全部通过；MCP `pytest mcp\\tests -q` 为 12 passed，`git diff --check` 和 Git 跟踪 Markdown 本地链接检查通过。
+- APK 元数据：Watch `com.poyi.watchintervals` / `0.22.0` / versionCode `33`；Phone `com.poyi.watchintervals.phone` / `0.24.0` / versionCode `20`。两个 APK 均为 Android Debug 证书，证书 SHA-256 为 `7EB76B41EE20B76E877282F63D5468C016F09AED4513F5985F524ED325915FCD`。
+- APK SHA-256：Watch `33C8D7974F12B72BC304E3594D2F15664483C639687666FB1CDCB62D0BC84F99`；Phone `6F084635091650231FAF5972013A7C76DCDBFD9CCC3246AEBB014824A836EB84`。
+- 当前可下载候选发布为 GitHub [v0.22.0 prerelease](https://github.com/666poyi666-collab/WatchIntervals/releases/tag/v0.22.0)，资产包含两个 debug APK、`SHA-256.txt` 和 `build-info.json`。由于仍有 OWW221/Xiaomi 真机、户外传感器、Doze/重启和 Cloud V3 新版本门禁未完成，本版本不宣称正式稳定发布。
 
 ## [Watch 0.21.1 / Phone 0.22.1] - 未发布
 
@@ -271,6 +275,7 @@
 - 当前 OWW221 固件未开放可用的系统户外跑能力映射。
 - 自动化测试和 Gradle Wrapper 尚待补齐。
 
-[Unreleased]: https://github.com/666poyi666-collab/WatchIntervals/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/666poyi666-collab/WatchIntervals/compare/v0.22.0...HEAD
+[Watch 0.22.0 / Phone 0.24.0]: https://github.com/666poyi666-collab/WatchIntervals/releases/tag/v0.22.0
 [Watch 0.17.0 / Phone 0.10.0 / MCP 0.5.0]: https://github.com/666poyi666-collab/WatchIntervals/compare/v0.16.0...v0.17.0
 [Watch 0.16.0 / Phone 0.9.0]: https://github.com/666poyi666-collab/WatchIntervals/releases/tag/v0.16.0
