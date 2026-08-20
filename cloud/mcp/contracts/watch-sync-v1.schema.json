@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://poyi.example/contracts/watch-sync-v1.schema.json",
+  "title": "Watch canonical sync v1",
+  "description": "The only accepted exchange envelopes. Device credentials appear only in the Authorization header.",
+  "$defs": {
+    "safeText": {
+      "type": "string",
+      "allOf": [
+        { "not": { "pattern": "^[dD][aA][tT][aA]:" } },
+        { "not": { "pattern": "^[A-Za-z0-9_-]{128,}$" } },
+        { "not": { "pattern": "^[A-Za-z0-9+/]{128,}={0,2}$" } },
+        { "not": { "pattern": "^(?:[A-Za-z0-9+/_-]\\s*){128,}={0,2}$" } }
+      ]
+    },
+    "stage": {
+      "type": "object",
+      "required": ["kind", "unit", "target"],
+      "properties": {
+        "kind": { "enum": ["RUN", "WALK", "REST"] },
+        "unit": { "enum": ["DISTANCE", "TIME"] },
+        "target": { "type": "integer", "minimum": 1, "maximum": 1000000 }
+      },
+      "additionalProperties": false
+    },
+    "plan": {
+      "type": "object",
+      "required": ["schemaVersion", "id", "name", "groupId", "groupName", "groupSortOrder", "requirement", "updatedAt", "selected", "stages"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "id": { "$ref": "#/$defs/safeText", "minLength": 1, "maxLength": 128 },
+        "name": { "$ref": "#/$defs/safeText", "minLength": 1, "maxLength": 120 },
+        "groupId": { "$ref": "#/$defs/safeText", "minLength": 1, "maxLength": 128 },
+        "groupName": { "$ref": "#/$defs/safeText", "maxLength": 120 },
+        "groupSortOrder": { "type": "integer", "minimum": 0 },
+        "requirement": { "$ref": "#/$defs/safeText", "maxLength": 2000 },
+        "updatedAt": { "type": "integer", "minimum": 0 },
+        "selected": { "type": "boolean" },
+        "stages": { "type": "array", "minItems": 1, "maxItems": 256, "items": { "$ref": "#/$defs/stage" } }
+      },
+      "additionalProperties": false
+    },
+    "encryption": {
+      "type": "object",
+      "required": ["algorithm", "keyId"],
+      "properties": {
+        "algorithm": { "const": "AES-256-GCM" },
+        "keyId": { "$ref": "#/$defs/safeText", "minLength": 1, "maxLength": 128 }
+      },
+      "additionalProperties": false
+    },
+    "objectRef": {
+      "type": "object",
+      "required": ["storage", "key", "sha256", "sizeBytes", "contentType", "encryption"],
+      "properties": {
+        "storage": { "const": "r2" },
+        "key": { "$ref": "#/$defs/safeText", "minLength": 1, "maxLength": 512, "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._/-]*$" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
+        "sizeBytes": { "type": "integer", "minimum": 0, "maximum": 104857600 },
+        "contentType": { "enum": ["application/x-ndjson", "application/json", "application/gpx+xml"] },
+        "encryption": { "$ref": "#/$defs/encryption" }
+      },
+      "additionalProperties": false
+    },
+    "detailRefs": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "route": { "$ref": "#/$defs/objectRef" },
+        "heartRate": { "$ref": "#/$defs/objectRef" }
+      },
+      "additionalProperties": false
+    },
+    "stageResult": {
+      "type": "object",
+      "required": ["index", "name", "unit", "target", "completedAtMs", "totalDistanceMeters"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "name": { "$ref": "#/$defs/safeText", "maxLength": 120 },
+        "unit": { "enum": ["DISTANCE", "TIME"] },
+        "target": { "type": "integer", "minimum": 1 },
+        "completedAtMs": { "type": "integer", "minimum": 0 },
+        "totalDistanceMeters": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "workout": {
+      "type": "object",
+      "required": ["id", "schemaVersion", "startedAt", "endedAt", "durationMs", "pausedDurationMs", "distanceMeters", "steps", "averageHeartRate", "planName", "planGroup", "planCompletedActiveMs", "planDistanceMeters", "freeRecordingDistanceMeters", "stageResults"],
+      "properties": {
+        "id": { "$ref": "#/$defs/safeText", "minLength": 1, "maxLength": 128 },
+        "schemaVersion": { "const": 1 },
+        "startedAt": { "type": "integer", "minimum": 0 },
+        "endedAt": { "type": "integer", "minimum": 0 },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "pausedDurationMs": { "type": "integer", "minimum": 0 },
+        "distanceMeters": { "type": "number", "minimum": 0 },
+        "steps": { "type": "integer", "minimum": 0 },
+        "averageHeartRate": { "type": "integer", "minimum": 0, "maximum": 260 },
+        "planName": { "$ref": "#/$defs/safeText", "maxLength": 200 },
+        "planGroup": { "$ref": "#/$defs/safeText", "maxLength": 200 },
+        "planCompletedActiveMs": { "type": "integer", "minimum": 0 },
+        "planDistanceMeters": { "type": "number", "minimum": 0 },
+        "freeRecordingDistanceMeters": { "type": "number", "minimum": 0 },
+        "stageResults": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/stageResult" } },
+        "averagePaceSecondsPerKm": { "type": "integer", "minimum": 0 },
+        "averageCadenceSpm": { "type": "integer", "minimum": 0 },
+        "maxSmoothedSpeedMps": { "type": "number", "minimum": 0 },
+        "detailRefs": { "$ref": "#/$defs/detailRefs" }
+      },
+      "additionalProperties": false
+    },
+    "mutation": {
+      "type": "object",
+      "required": ["opId", "entityType", "entityId", "baseRevision", "operation", "payload"],
+      "properties": {
+        "opId": { "type": "string", "format": "uuid" },
+        "entityType": { "enum": ["plan", "workout"] },
+        "entityId": { "$ref": "#/$defs/safeText", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+        "baseRevision": { "type": "integer", "minimum": 0 },
+        "operation": { "enum": ["upsert", "delete"] },
+        "payload": { "type": ["object", "null"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "operation": { "const": "delete" } }, "required": ["operation"] },
+          "then": { "properties": { "payload": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "entityType": { "const": "plan" }, "operation": { "const": "upsert" } }, "required": ["entityType", "operation"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/plan" } } }
+        },
+        {
+          "if": { "properties": { "entityType": { "const": "workout" }, "operation": { "const": "upsert" } }, "required": ["entityType", "operation"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/workout" } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "acknowledgement": {
+      "type": "object",
+      "required": ["outcome", "opId", "entityType", "entityId", "operation", "revision"],
+      "properties": {
+        "outcome": { "const": "acknowledged" },
+        "opId": { "type": "string", "format": "uuid" },
+        "entityType": { "enum": ["plan", "workout"] },
+        "entityId": { "type": "string" },
+        "operation": { "enum": ["upsert", "delete"] },
+        "revision": { "type": "integer", "minimum": 1 },
+        "replayed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "entityState": {
+      "type": "object",
+      "required": ["entityType", "entityId", "revision", "operation", "payload", "deletedAt", "updatedAt"],
+      "properties": {
+        "entityType": { "enum": ["plan", "workout"] },
+        "entityId": { "type": "string" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "operation": { "enum": ["upsert", "delete"] },
+        "payload": { "type": ["object", "null"] },
+        "deletedAt": { "type": ["string", "null"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "conflict": {
+      "type": "object",
+      "required": ["outcome", "opId", "entityType", "entityId", "operation", "error", "current", "candidate"],
+      "properties": {
+        "outcome": { "const": "conflict" },
+        "opId": { "type": "string", "format": "uuid" },
+        "entityType": { "enum": ["plan", "workout"] },
+        "entityId": { "type": "string" },
+        "operation": { "enum": ["upsert", "delete"] },
+        "error": { "type": "string" },
+        "retryable": { "type": "boolean" },
+        "current": { "oneOf": [{ "$ref": "#/$defs/entityState" }, { "type": "null" }] },
+        "candidate": { "type": ["object", "null"] },
+        "conflictId": { "type": "string" },
+        "preserveCandidate": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "change": {
+      "type": "object",
+      "required": ["sequence", "entityType", "entityId", "revision", "operation", "payload", "changedAt", "originDeviceId", "operationId"],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 1 },
+        "entityType": { "enum": ["plan", "workout"] },
+        "entityId": { "type": "string" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "operation": { "enum": ["upsert", "delete"] },
+        "payload": { "type": ["object", "null"] },
+        "changedAt": { "type": "string", "format": "date-time" },
+        "originDeviceId": { "type": "string" },
+        "operationId": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["protocolVersion", "deviceId", "cursor", "mutations"],
+      "properties": {
+        "protocolVersion": { "const": 1 },
+        "deviceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{2,127}$" },
+        "cursor": { "type": ["string", "null"], "pattern": "^c[0-9a-z]+$" },
+        "mutations": { "type": "array", "maxItems": 25, "items": { "$ref": "#/$defs/mutation" } }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["protocolVersion", "authority", "acknowledged", "conflicts", "changes", "nextCursor", "hasMore", "serverTime"],
+      "properties": {
+        "protocolVersion": { "const": 1 },
+        "authority": { "const": "remote_authoritative" },
+        "acknowledged": { "type": "array", "items": { "$ref": "#/$defs/acknowledgement" } },
+        "conflicts": { "type": "array", "items": { "$ref": "#/$defs/conflict" } },
+        "changes": { "type": "array", "items": { "$ref": "#/$defs/change" } },
+        "nextCursor": { "type": "string", "pattern": "^c[0-9a-z]+$" },
+        "hasMore": { "type": "boolean" },
+        "serverTime": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

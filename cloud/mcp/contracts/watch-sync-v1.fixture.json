@@ -1,0 +1,179 @@
+{
+  "request": {
+    "protocolVersion": 1,
+    "deviceId": "watch-contract-a",
+    "cursor": null,
+    "mutations": [
+      {
+        "opId": "11111111-1111-4111-8111-111111111111",
+        "entityType": "plan",
+        "entityId": "plan-contract-5k",
+        "baseRevision": 0,
+        "operation": "upsert",
+        "payload": {
+          "schemaVersion": 1,
+          "id": "plan-contract-5k",
+          "name": "Contract 5K plan",
+          "groupId": "group-contract",
+          "groupName": "Contract plans",
+          "groupSortOrder": 1,
+          "requirement": "Run controlled intervals.",
+          "updatedAt": 1785196800000,
+          "selected": true,
+          "stages": [
+            { "kind": "RUN", "unit": "DISTANCE", "target": 1000 },
+            { "kind": "REST", "unit": "TIME", "target": 120 }
+          ]
+        }
+      },
+      {
+        "opId": "22222222-2222-4222-8222-222222222222",
+        "entityType": "workout",
+        "entityId": "workout-contract-1",
+        "baseRevision": 0,
+        "operation": "upsert",
+        "payload": {
+          "id": "workout-contract-1",
+          "schemaVersion": 1,
+          "startedAt": 1785196800000,
+          "endedAt": 1785198600000,
+          "durationMs": 1800000,
+          "pausedDurationMs": 60000,
+          "distanceMeters": 5000,
+          "steps": 6200,
+          "averageHeartRate": 148,
+          "planName": "Contract 5K plan",
+          "planGroup": "Contract plans",
+          "planCompletedActiveMs": 1740000,
+          "planDistanceMeters": 4800,
+          "freeRecordingDistanceMeters": 200,
+          "stageResults": [
+            {
+              "index": 0,
+              "name": "Run 1 km",
+              "unit": "DISTANCE",
+              "target": 1000,
+              "completedAtMs": 360000,
+              "totalDistanceMeters": 1000
+            }
+          ],
+          "averagePaceSecondsPerKm": 348,
+          "averageCadenceSpm": 172,
+          "maxSmoothedSpeedMps": 4.2,
+          "detailRefs": {
+            "route": {
+              "storage": "r2",
+              "key": "watch-contract-a/workout-contract-1/route.ndjson.enc",
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "sizeBytes": 4096,
+              "contentType": "application/x-ndjson",
+              "encryption": { "algorithm": "AES-256-GCM", "keyId": "watch-key-1" }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "response": {
+    "protocolVersion": 1,
+    "authority": "remote_authoritative",
+    "acknowledged": [
+      {
+        "outcome": "acknowledged",
+        "opId": "11111111-1111-4111-8111-111111111111",
+        "entityType": "plan",
+        "entityId": "plan-contract-5k",
+        "operation": "upsert",
+        "revision": 1
+      },
+      {
+        "outcome": "acknowledged",
+        "opId": "22222222-2222-4222-8222-222222222222",
+        "entityType": "workout",
+        "entityId": "workout-contract-1",
+        "operation": "upsert",
+        "revision": 1
+      }
+    ],
+    "conflicts": [],
+    "changes": [
+      {
+        "sequence": 1,
+        "entityType": "plan",
+        "entityId": "plan-contract-5k",
+        "revision": 1,
+        "operation": "upsert",
+        "payload": {
+          "schemaVersion": 1,
+          "id": "plan-contract-5k",
+          "name": "Contract 5K plan",
+          "groupId": "group-contract",
+          "groupName": "Contract plans",
+          "groupSortOrder": 1,
+          "requirement": "Run controlled intervals.",
+          "updatedAt": 1785196800000,
+          "selected": true,
+          "stages": [
+            { "kind": "RUN", "unit": "DISTANCE", "target": 1000 },
+            { "kind": "REST", "unit": "TIME", "target": 120 }
+          ]
+        },
+        "changedAt": "2026-07-28T00:00:01.000Z",
+        "originDeviceId": "watch-contract-a",
+        "operationId": "11111111-1111-4111-8111-111111111111"
+      },
+      {
+        "sequence": 2,
+        "entityType": "workout",
+        "entityId": "workout-contract-1",
+        "revision": 1,
+        "operation": "upsert",
+        "payload": {
+          "id": "workout-contract-1",
+          "schemaVersion": 1,
+          "startedAt": 1785196800000,
+          "endedAt": 1785198600000,
+          "durationMs": 1800000,
+          "pausedDurationMs": 60000,
+          "distanceMeters": 5000,
+          "steps": 6200,
+          "averageHeartRate": 148,
+          "planName": "Contract 5K plan",
+          "planGroup": "Contract plans",
+          "planCompletedActiveMs": 1740000,
+          "planDistanceMeters": 4800,
+          "freeRecordingDistanceMeters": 200,
+          "stageResults": [
+            {
+              "index": 0,
+              "name": "Run 1 km",
+              "unit": "DISTANCE",
+              "target": 1000,
+              "completedAtMs": 360000,
+              "totalDistanceMeters": 1000
+            }
+          ],
+          "averagePaceSecondsPerKm": 348,
+          "averageCadenceSpm": 172,
+          "maxSmoothedSpeedMps": 4.2,
+          "detailRefs": {
+            "route": {
+              "storage": "r2",
+              "key": "watch-contract-a/workout-contract-1/route.ndjson.enc",
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "sizeBytes": 4096,
+              "contentType": "application/x-ndjson",
+              "encryption": { "algorithm": "AES-256-GCM", "keyId": "watch-key-1" }
+            }
+          }
+        },
+        "changedAt": "2026-07-28T00:00:01.000Z",
+        "originDeviceId": "watch-contract-a",
+        "operationId": "22222222-2222-4222-8222-222222222222"
+      }
+    ],
+    "nextCursor": "c2",
+    "hasMore": false,
+    "serverTime": "2026-07-28T00:00:01.000Z"
+  }
+}

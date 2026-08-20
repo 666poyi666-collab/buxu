@@ -1,0 +1,68 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "watch-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-10",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "account_id": "6465e9d49bcdb88adde245a7f7a74acc",
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "watch-staging.pyzzgk.dpdns.org", "custom_domain": true }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  // WATCH_AUTHORITY_CAPABILITY is an independent wao_* secret. The central authority binds this
+  // Worker as WATCH_OBSERVATION; neither value is shared with OAuth or device authentication.
+  "vars": {
+    "BUILD_COMMIT": "396f57915d308d61f0106cdb93b9375c01f6da84",
+    "OAUTH_ISSUER": "https://poyi-oauth-as.focuslink-poyi-6465e9.workers.dev",
+    "OAUTH_AUDIENCE": "https://watch-mcp.focuslink-poyi-6465e9.workers.dev/mcp",
+    "OAUTH_JWKS_URL": "https://poyi-oauth-as.focuslink-poyi-6465e9.workers.dev/jwks.json",
+    "OAUTH_AS_METADATA_URL": "https://poyi-oauth-as.focuslink-poyi-6465e9.workers.dev/.well-known/oauth-authorization-server",
+    "OAUTH_INTROSPECTION_URL": "https://poyi-oauth-as.focuslink-poyi-6465e9.workers.dev/introspect",
+    "OAUTH_RS_CLIENT_ID": "watch-cloud-mcp",
+    "WATCH_PLAN_REVISION_DOMAIN_ID": "v3d.watch-production-owner-v1",
+    "WATCH_AUTHORITY_AUDIENCE": "https://personal-mcp-authority.focuslink-poyi-6465e9.workers.dev/authority/watch"
+  },
+  "services": [
+    { "binding": "OAUTH_HTTP", "service": "poyi-oauth-as" }
+  ],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "WatchCloudMCP"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "WatchCommandChannel"
+      ]
+    },
+    {
+      "tag": "v3",
+      "deleted_classes": [
+        "WatchCloudMCP"
+      ]
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "WatchCommandChannel",
+        "name": "COMMAND_CHANNEL"
+      }
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "watch-mcp",
+      "database_id": "17f4579a-d978-4fa8-9f76-872214c43dc8"
+    }
+  ]
+}

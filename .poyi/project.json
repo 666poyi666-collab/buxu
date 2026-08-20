@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "watchintervals",
+  "name": "WatchIntervals",
+  "profile": "product",
+  "lifecycle": "active",
+  "requires": { "frontend": true, "backend": true, "cloud": true, "mcp": true },
+  "components": {
+    "watch": "app",
+    "phone": "phone",
+    "cloudMcp": "cloud/mcp",
+    "localCompatibilityMcp": "mcp"
+  }
+}

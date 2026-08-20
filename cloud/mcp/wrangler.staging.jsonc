@@ -1,0 +1,56 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "watch-mcp-staging",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-10",
+  "compatibility_flags": ["nodejs_compat"],
+  "account_id": "6465e9d49bcdb88adde245a7f7a74acc",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  // Configure WATCH_AUTHORITY_CAPABILITY as a secret and WATCH_AUTHORITY_AUDIENCE outside Git; the
+  // central signing authority binds this Worker as WATCH_OBSERVATION.
+  "vars": {
+    "OAUTH_ISSUER": "https://poyi-oauth-as-staging.focuslink-poyi-6465e9.workers.dev",
+    "OAUTH_AUDIENCE": "https://watch-mcp-staging.focuslink-poyi-6465e9.workers.dev/mcp",
+    "OAUTH_JWKS_URL": "https://poyi-oauth-as-staging.focuslink-poyi-6465e9.workers.dev/jwks.json",
+    "OAUTH_AS_METADATA_URL": "https://poyi-oauth-as-staging.focuslink-poyi-6465e9.workers.dev/.well-known/oauth-authorization-server",
+    "OAUTH_INTROSPECTION_URL": "https://poyi-oauth-as-staging.focuslink-poyi-6465e9.workers.dev/introspect",
+    "OAUTH_RS_CLIENT_ID": "watch-mcp-staging",
+    "WATCH_PLAN_REVISION_DOMAIN_ID": "v3d.watch-staging-owner-v1",
+    "WATCH_AUTHORITY_AUDIENCE": "https://personal-mcp-authority-staging.focuslink-poyi-6465e9.workers.dev/authority/watch"
+  },
+  "services": [
+    { "binding": "OAUTH_HTTP", "service": "poyi-oauth-as-staging" }
+  ],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["WatchCloudMCP"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["WatchCommandChannel"]
+    },
+    {
+      "tag": "v3",
+      "deleted_classes": ["WatchCloudMCP"]
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "WatchCommandChannel",
+        "name": "COMMAND_CHANNEL"
+      }
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "watch-mcp-staging-watch-suixin",
+      "database_id": "cfd8e22d-f1f6-4955-8da3-ac7fd2b5e91a",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "watch-cloud-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Watch Cloud canonical sync and OAuth-protected MCP Worker (local implementation pending deployment evidence)",
+  "scripts": {
+    "test": "npm run test:static && npm run test:schema && npm run test:d1 && npm run test:worker",
+    "test:contract": "npm run test:worker",
+    "test:d1": "node --test tests/d1-schema.test.mjs",
+    "test:schema": "node --test tests/contract-schema.test.mjs",
+    "test:static": "node --test tests/p0-static-gates.test.mjs",
+    "test:worker": "node --test tests/worker-contract.test.mjs",
+    "test:staging:mcp": "node ops/staging-mcp-probe.mjs",
+    "test:staging:v3": "node ops/staging-v3-exchange-probe.mjs",
+    "typecheck": "tsc --noEmit",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.0.0",
+    "agents": "^0.20.0",
+    "jose": "^6.2.4",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260815.1",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.124.0"
+  }
+}
