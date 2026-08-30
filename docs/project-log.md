@@ -739,3 +739,15 @@
 - 外部状态：使用仓库内生产 provisioning 脚本重新签发 device token，脚本只写 token hash 到 D1且不输出凭据；Phone Keystore 只保存 ciphertext/nonce。提交 f1ad28deb5d7ff2a36c87c0586b4d85bacad7abd 已部署 Cloud MCP 0.5.0，Version 9035dde3-46d6-4831-b49a-63011e134af6。
 - 部署证据：custom domain 与 workers.dev 的 healthz 均返回 f1ad28d；readyz 全 ready；匿名 MCP 为 401 且携带 protected-resource metadata；部署后 Phone exchange HTTP 200、error 为空。
 - 验证：Cloud MCP typecheck 与 62 项分层测试通过，其中 Worker 39 项；Android ASCII worktree 双端单测通过；生产 Cloud、Phone、Watch 最终 revision 40、8 组、26 项，两个 outbox 均为 0，旧 12 项全包含。
+
+## 2026-08-30：专用双 AVD 循环找茬（BUG-067/072/075/076/077/078）
+
+- 目标：不再用“能编译”代替可用，使用隔离 fixture 把 Phone 计划管理和 Watch 一次完整训练从入口跑到清理，再对每个新失败点立即修复和重跑。
+- Phone：API 35 / 1080×2400 在 1.0/1.3/2.0 遍历今天、训练、历史、睡眠、设置、计划库与编辑器。2.0 旧纵排底栏过密、嵌套编辑器仍显示全局导航；现使用 1.6× 自适应横排和嵌套路由隐藏。空分组原来持久化成功却被 UI 过滤，现可见可删。fixture 最终 8 组/26 项，原 ID 缺失 0。
+- Watch：API 30 / 378×496 通过 UI 选中 Cycle 4/Day 2，搜星中立即开始；训练阶段页同屏心率/距离/热量。息屏期间服务持续 foreground，修复前亮屏焦点虽是 TrainingActivity 但 overlay 永久遮挡；补 `onNewIntent()` 可见回调后直接回第 2/3 阶段。
+- 功耗状态：暂停后 GPS interval 10s、`WatchIntervals:Workout` 释放；继续后 2s 并重新持有。覆盖安装杀进程后，Main 入口按 checkpoint 回到同一 TrainingActivity，活动时基继续。
+- 新缺陷：06:47 的 sensorless 时间训练被 WeeklyStats 当成误触；改为完成阶段或至少 2 分钟即计入，并以时长展示。历史详情又在 x86 缺 Baidu JNI 时崩溃；坐标转换和地图初始化均增加不改数据的降级。
+- 清理：历史详情修复后可打开，删除确认只删除 synthetic 记录；`workout_index.json=[]` 且 history 目录为空。两台 AVD font scale 均回 1.0，Watch timeout 回 30000。
+- 防复发：新增/补强 `PhoneUiContractTest`、`PhoneInteractionResourceTest`、`WatchWorkoutResourceTest`、`WeeklyStatsTest`、`WorkoutRouteFallbackResourceTest`、`AvdToolingResourceTest`。截图/XML 留在忽略目录 `.gradle/simulation`。
+- 发布级回归：ASCII worktree 执行双端 test/lint/assemble，104 tasks 成功；56 suites、239 tests、0 failure/error/skipped。MCP 12 项和 24 份 Markdown 本地链接通过，主仓库双 APK 构建与 `git diff --check` 通过。
+- 真机部署：OWW221 和 Xiaomi 均使用 `adb install -r`，未清应用数据。设备 `base.apk` SHA-256 与本地分别同为 `6ED9732BCF6D9103E4DB4D2E886B0B135AB2AF1E10E87916B53EFA74E2B3B6B0`、`8E030EF52F08D109949FFF0D8C255245957F5EBB28B1B3ECED31E42E46283BBB`。部署后生产 Phone/Watch 继续是 revision 40、8 组、26 项、有效 selectedPlanId；PhoneCompanion/PhonePlanBridge/WatchBridge/WatchLink 均为 foreground。双端 ADB 周期保活任务最近结果均为 0。

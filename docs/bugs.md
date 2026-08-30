@@ -704,9 +704,9 @@
 - 影响：Phone 0.25.0（21）第二轮 Compose 候选
 - 复现：点击顶部连接事实带的状态点或 pending 区域不会进入设置；设置底板固定 560dp 且不避让 IME/导航栏，空白区使用禁用 clickable 仍可能触发外层关闭；分组标题继续并排 3 个操作；阶段类型/单位靠重复点击盲切，类型变化还会重置已填目标；训练实时卡固定 250dp，在 2.0 字体下可能裁字。
 - 根因：重构只核对了组件存在与常规字体首屏，没有检查父级点击命中、Compose modifier 输入消费、可用高度变化及操作状态是否在点击前可见；旧的循环按钮和固定尺寸被直接带入新组件。
-- 修复：连接事实带改为整行带按钮角色的 48dp 入口并增加前进图标；设置底板使用 90% 可用高度、IME/导航栏 padding 和无涟漪空操作层阻止穿透；分组只保留新增与更多，重命名/删除进入菜单；阶段类型/单位改为显式分段选择并保留同单位目标值；训练卡改为最小高度，可随字体内容增高。
-- 防复发测试：新增 `PhoneInteractionResourceTest` 固定整行入口、响应式设置层、非穿透、更多菜单、显式阶段选择与可扩高训练卡；`PhonePlanUiModelTest` 固定同单位保值和跨单位安全默认。
-- 验证：ASCII `W:` 映射下双端 JVM 测试共 216 项、0 failure/error；双端 Lint/assemble 与 `git diff --check` 通过。最终 Phone APK 已无数据覆盖安装，设备 `base.apk` SHA-256 与本地 `85034347...086FC` 一致；1.3/2.0 字体与 TalkBack 仍待 PT-026/029。
+- 修复：连接事实带改为整行带按钮角色的 48dp 入口；设置底板使用可用高度、IME/导航栏 padding 和无涟漪空操作层阻止穿透；分组只保留新增与更多，阶段类型/单位改为显式分段选择，训练卡可随内容增高。补测发现 2.0× 底栏纵排过密和编辑器仍显示全局底栏：1.6× 起改为横向图标+短标签与精简连接状态，计划详情/编辑器隐藏全局底栏。
+- 防复发测试：`PhoneInteractionResourceTest` 固定整行入口、响应式设置层、更多菜单、显式阶段选择、紧凑大字体入口和嵌套路由底栏规则；`PhoneUiContractTest` 固定 1.6× 阈值、短状态和详情/编辑器隐藏导航；`PhonePlanUiModelTest` 固定同单位保值和跨单位安全默认。
+- 验证：API 35 / 1080×2400 AVD 实测 1.0 今天页、1.3 编辑器全控件、2.0 今天/训练/历史/睡眠/设置；无文字重叠，2.0 底栏横排完整，编辑器无全局底栏。真机 1.3/2.0 与 TalkBack 仍由 PT-026/029 覆盖。
 
 ### BUG-068：Watch ADB 保活忽略 offline TCP 端点，无法自行重拨
 
@@ -758,10 +758,10 @@
 - 严重度：P1
 - 影响：OWW221 / ColorOS Watch 训练与准备流程
 - 复现：训练中按电源键息屏再点亮；系统先强制启动 Launcher。前台 Service 直接 startActivity、AlarmManager Activity PendingIntent 和 full-screen notification 均不能恢复，日志分别出现 Abort background activity starts 与 SystemUI canPost not allowed。
-- 根因：厂商运动应用拥有 MANAGE_ACTIVITY_STACKS、STOP_APP_SWITCHES、SYSTEM_ALERT_WINDOW 和签名级权限，普通应用没有后台任务栈白名单；Android 通用 full-screen notification 还被手表 SystemUI 的第三方通知 allow-list 拒绝。
-- 修复：应用请求 SYSTEM_ALERT_WINDOW，首次开始训练时只请求一次授权。亮屏后 Service 建立本应用全屏训练返回层，获得可见窗口后自动以 REORDER_TO_FRONT | SINGLE_TOP 恢复原 TrainingActivity/WarmupActivity；若自动启动仍失败，返回层保持并提供“返回训练”操作。无权限时保留 ongoing notification fallback。
-- 防复发测试：WatchWorkoutResourceTest 固定 overlay 权限、TYPE_APPLICATION_OVERLAY、Activity 可见回调和 notification fallback；训练状态仍只由 WorkoutService 持有。
-- 验证：OWW221 用 dumpsys battery unplug 排除有线充电全屏层干扰；息屏后焦点为 Launcher，亮屏后日志出现 TrainingActivity START/Displayed，最终 mCurrentFocus 与 mFocusedApp 均为 TrainingActivity，无 Abort。恢复过程未创建第二条训练。
+- 根因：厂商运动应用拥有 MANAGE_ACTIVITY_STACKS、STOP_APP_SWITCHES、SYSTEM_ALERT_WINDOW 和签名级权限，普通应用没有后台任务栈白名单；Android 通用 full-screen notification 还被手表 SystemUI 的第三方通知 allow-list 拒绝。API 30 AVD 补测又发现 Activity 已经 resumed 时，overlay 后的 `SINGLE_TOP` 只触发 `onNewIntent()`，不会重新绑定服务，旧代码因此没有移除“返回训练”层。
+- 修复：应用请求 SYSTEM_ALERT_WINDOW，首次开始训练时只请求一次授权。亮屏后 Service 建立本应用全屏训练返回层，再以 REORDER_TO_FRONT | SINGLE_TOP 恢复原 TrainingActivity/WarmupActivity；两页的 `onNewIntent()` 都显式回报可见并移除 overlay。自动启动失败时保留操作层，无权限时保留 ongoing notification fallback。
+- 防复发测试：WatchWorkoutResourceTest 固定 overlay 权限、TYPE_APPLICATION_OVERLAY、Activity 可见回调、两页 `onNewIntent()` 清理和 notification fallback；训练状态仍只由 WorkoutService 持有。
+- 验证：OWW221 历史证据确认亮屏后 TrainingActivity 成为焦点。API 30 AVD 复现修复前焦点虽为 TrainingActivity、画面却停在“返回训练”；修复后息屏 3 秒再亮屏直接显示第 2/3 阶段仪表，WindowManager 不再存在 `WatchIntervalsWorkoutReturn`，服务与训练 ID 未重建。
 
 ### BUG-073：阶段切换只有短音和震动，不能说明下一阶段类型与目标
 
@@ -792,9 +792,41 @@
 - 影响：Phone 0.25.0 计划库
 - 复现：编辑安排时 UI 只保存分组名称，PhonePlanLibrary.upsert 再按名称查找/创建 groupId；分组改名后编辑会创建新组。deleteGroup 会删除组并把全部成员搬到自动创建的“我的计划”，但 UI 同时把分组叫计划、把计划叫安排，用户无法判断副作用。deletePlan 对不存在 ID 仍推进 library revision。
 - 根因：可变 display name 被当成稳定外键；数据层没有区分“删除空分组、移动安排、删除单项”；确认文案没有固定操作边界。
-- 修复：PlanDraft 全程携带稳定 groupId，编辑器只能选择已存在分组；非空分组删除 fail closed 为 group_not_empty；删除不存在 planId 返回 plan_not_found；单项删除只写精确 tombstone。UI 统一“分组 / 安排 / 阶段”，非空组删除禁用，确认层展示其他安排数量保持不变。
-- 防复发测试：PhonePlanLibraryMutationTest 覆盖改名后 groupId 稳定、单项删除保留兄弟项、缺失 ID 零写入、非空组不可删、空组只删自身；PhoneInteractionResourceTest 固定选择器和禁用状态。
-- 验证：5 项 mutation 回归通过；生产恢复前后比对确认原手机 12 个安排全部仍存在于当前 26 项云端库，没有缺失 ID。
+- 修复：PlanDraft 全程携带稳定 groupId，编辑器只能选择已存在分组；非空分组删除 fail closed 为 group_not_empty；删除不存在 planId 返回 plan_not_found；单项删除只写精确 tombstone。UI 统一“分组 / 安排 / 阶段”，非空组删除禁用，确认层展示其他安排数量保持不变。补测修复 `PhoneViewModel` 过滤空分组的问题，新建空组现在立即可见并能安全删除。
+- 防复发测试：PhonePlanLibraryMutationTest 覆盖改名后 groupId 稳定、单项删除保留兄弟项、缺失 ID 零写入、非空组不可删、空组只删自身；PhoneInteractionResourceTest 固定选择器、禁用状态和不得过滤空成员分组。
+- 验证：API 35 AVD 从 8 组/26 项创建空组为 9/26，UI 可见；删除后回到 8/26。新建并删除单项只产生一个 tombstone，原 26 个 planId 缺失 0，selectedPlanId 未变化。生产恢复前后比对确认原手机 12 个安排全部仍存在于当前 26 项云端库。
+
+### BUG-076：无距离与步数的有效时间训练被周统计显示为“暂无记录”
+
+- 状态：Verified
+- 严重度：P1
+- 影响：Watch 0.23.0（34）室内、传感器不可用或权限降级训练
+- 复现：API 30 AVD 完成 5 分钟快走阶段后结束；历史索引正确写入 06:47 和阶段结果，但主页本周仍显示“暂无记录”。
+- 根因：`WeeklyStats` 把所有 `distanceMeters <= 0 && steps <= 0` 记录都视为误触，没有考虑时间目标、已完成阶段和传感器降级。
+- 修复：已完成任一阶段或活动至少 2 分钟的 sensorless 训练计入周统计；无距离时本周仪表显示累计活动时长而不是 `0 m`。短于 2 分钟且没有阶段结果的全零误触仍过滤。
+- 防复发测试：`WeeklyStatsTest.keepsMeaningfulSensorlessTimeSessions` 同时固定 2 分钟阈值、已完成短阶段和旧 90 秒误触边界。
+- 验证：同一 AVD 记录修复后主页显示 `06:47 · 1 次`；记录随后通过应用删除确认清理，索引为 `[]`、历史目录为空。
+
+### BUG-077：可选地图坐标 JNI 缺失会让历史详情整页崩溃
+
+- 状态：Verified
+- 严重度：P1
+- 影响：缺少 Baidu CoordinateConverter JNI 的 ABI/设备；API 30 x86_64 AVD 可复现
+- 复现：打开含 1 个合法轨迹点的历史详情，`CoordinateConverter.convert()` 抛 `UnsatisfiedLinkError`，HistoryActivity 与主任务一起被系统结束。
+- 根因：轨迹点在地图授权/激活检查之前就执行 vendor 坐标转换，且没有处理 `LinkageError`；地图初始化同样没有整体降级边界。
+- 修复：过滤越界坐标；坐标 JNI 缺失后一次性改用原始坐标，地图初始化的 LinkageError/RuntimeException 改为明确占位，文字、阶段和统计详情继续可用。原始轨迹文件不改写。
+- 防复发测试：`WorkoutRouteFallbackResourceTest` 固定 LinkageError、初始化失败、越界坐标与降级文案。
+- 验证：同一 AVD 历史详情修复后保持在 HistoryActivity，06:47/阶段数据可见，地图显示授权/不可用占位，无 AndroidRuntime 崩溃。
+
+### BUG-078：AVD Verify 只看安装状态会产生假绿，Watch 又误把训练页判失败
+
+- 状态：Verified
+- 严重度：P3（开发门禁）
+- 影响：`tools/oww221-avd.ps1` 与 `tools/phone-avd.ps1`
+- 根因：Phone Verify 不检查前台窗口；Watch 只接受 MainActivity，实际活动 TrainingActivity/WarmupActivity 会被误报。
+- 修复：双脚本从环境、`local.properties` 或 Android Studio 默认目录解析 SDK，动态读取各模块版本；Verify 启动产品入口并要求本包任一 Activity 获得 `mCurrentFocus`。Watch 专用 AVD 只在该隔离环境禁用崩溃的 Pixel Launcher。
+- 防复发测试：`AvdToolingResourceTest` 固定 SDK/版本/可见焦点合同。
+- 验证：`OWW221_API30` 的 API/378×496/320dpi/30秒/安装/可见性全 True；`WatchIntervalsPhone_API35` 的 API/1080×2400/440dpi/安装/可见性全 True。
 
 ## 2. 早期历史项
 

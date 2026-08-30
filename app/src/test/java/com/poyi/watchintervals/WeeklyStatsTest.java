@@ -50,6 +50,20 @@ public class WeeklyStatsTest {
         assertEquals(1200_000L, stats.activeMillis);
     }
 
+    @Test public void keepsMeaningfulSensorlessTimeSessions() {
+        ArrayList<WorkoutRecord> records = new ArrayList<>();
+        records.add(record(WEEK_START + 3600_000L, 0, 0,
+                WeeklyStats.MIN_SENSORLESS_SESSION_MILLIS));
+        WorkoutRecord completed = record(WEEK_START + 7200_000L, 0, 0, 60_000L);
+        completed.stageResults.put(new org.json.JSONObject());
+        records.add(completed);
+
+        WeeklyStats stats = WeeklyStats.of(records, SUNDAY_EVENING, SHANGHAI);
+        assertEquals(2, stats.sessions);
+        assertEquals(180_000L, stats.activeMillis);
+        assertEquals(0, stats.meters, 0.01);
+    }
+
     @Test public void emptyHistoryIsAnEmptyWeek() {
         WeeklyStats stats = WeeklyStats.of(new ArrayList<>(), SUNDAY_EVENING, SHANGHAI);
         assertEquals(0, stats.sessions);

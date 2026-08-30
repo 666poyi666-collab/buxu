@@ -18,7 +18,7 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 import java.util.ArrayList;
 
-public class WarmupActivity extends Activity {
+public class WarmupActivity extends WatchActivity {
     private String plan;
     private ArrayList<Stage> stages;
     private WorkoutService service;
@@ -75,6 +75,12 @@ public class WarmupActivity extends Activity {
         bound = bindService(new Intent(this, WorkoutService.class), connection, Context.BIND_AUTO_CREATE);
         handler.post(refresh);
         if (countingDown) handler.post(countdownTick);
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (service != null) service.onWorkoutSurfaceVisible();
     }
 
     @Override protected void onStop() {

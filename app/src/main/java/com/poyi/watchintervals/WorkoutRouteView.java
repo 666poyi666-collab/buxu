@@ -38,6 +38,7 @@ final class WorkoutRouteView extends FrameLayout {
     private static final float SINGLE_POINT_ZOOM = 18f;
     private static final float CAMERA_HORIZONTAL_PADDING_DP = 15f;
     private static final float CAMERA_VERTICAL_PADDING_DP = 25f;
+    private static volatile boolean coordinateConversionAvailable = true;
 
     private final TextView empty;
     private final ArrayList<LatLng> points = new ArrayList<>();
@@ -52,6 +53,7 @@ final class WorkoutRouteView extends FrameLayout {
     private boolean attached;
     private boolean mapResumed;
     private boolean mapDestroyed;
+    private boolean mapUnavailable;
     private int renderedCount = -1;
     private double renderedLastLatitude = Double.NaN;
     private double renderedLastLongitude = Double.NaN;
@@ -106,6 +108,20 @@ final class WorkoutRouteView extends FrameLayout {
     }
 
     private boolean ensureMap() {
+        if (mapUnavailable) return false;
+        try {
+            return ensureMapUnchecked();
+        } catch (LinkageError | RuntimeException error) {
+            mapUnavailable = true;
+            map = null;
+            empty.setVisibility(View.VISIBLE);
+            empty.setText("地图在当前设备不可用");
+            android.util.Log.w("WorkoutRouteView", "Map runtime unavailable", error);
+            return false;
+        }
+    }
+
+    private boolean ensureMapUnchecked() {
         if (mapView != null && !mapDestroyed) return true;
         if (!BaiduMapRuntime.initialize(getContext())) {
             empty.setVisibility(View.VISIBLE);
@@ -192,18 +208,29 @@ final class WorkoutRouteView extends FrameLayout {
         for (int index = Math.max(0, from); index < to; index++) {
             double latitude = latitudes[index];
             double longitude = longitudes[index];
-            if (!Double.isFinite(latitude) || !Double.isFinite(longitude)) continue;
+            if (!Double.isFinite(latitude) || !Double.isFinite(longitude)
+                    || latitude < -90d || latitude > 90d
+                    || longitude < -180d || longitude > 180d) continue;
             points.add(convertGps(latitude, longitude));
         }
     }
 
     private static LatLng convertGps(double latitude, double longitude) {
         LatLng source = new LatLng(latitude, longitude);
-        LatLng converted = new CoordinateConverter()
-                .from(CoordinateConverter.CoordType.GPS)
-                .coord(source)
-                .convert();
-        return converted == null ? source : converted;
+        if (!coordinateConversionAvailable) return source;
+        try {
+            LatLng converted = new CoordinateConverter()
+                    .from(CoordinateConverter.CoordType.GPS)
+                    .coord(source)
+                    .convert();
+            return converted == null ? source : converted;
+        } catch (LinkageError unavailable) {
+            coordinateConversionAvailable = false;
+            android.util.Log.w("WorkoutRouteView", "Coordinate conversion unavailable", unavailable);
+            return source;
+        } catch (RuntimeException invalidPoint) {
+            return source;
+        }
     }
 
     private void applyRouteToMap(boolean forceCamera) {

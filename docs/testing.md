@@ -35,8 +35,10 @@ git diff --check
 | WT-030 | 开始倒计时单次与恢复 | 在 OWW221 准备页点击开始，记录 3/2/1/GO；倒计时中按 Home/息屏后返回；重复点击开始与取消各 3 次 | 3 秒绝对时基只产生一次 3、2、1、GO；重复点击不会加速/重置；离开后返回显示同一剩余时基，GO 后只进入一次 TrainingActivity；取消清除 deadline 且不创建训练记录 |
 | WT-031 | GPS 首 fix 与功耗 | 室内无 fix、户外搜星、暂停/恢复各持续 2 分钟；读取 `dumpsys location`、BatteryStats 和服务快照 | 点击开始不等待 GPS；无 fix 时按系统运动或步数降级并明确标注；首 fix 请求最多每 15 秒重试；训练中 GPS 约 2 秒/2 米，暂停约 10 秒；准备态无 `WatchIntervals:Workout` wakelock，训练开始后才持有 |
 | WT-032 | 阶段语音与音色 | 分别试听清晰/沉稳/活力；运行 5 秒时间阶段和剩余 50 米距离阶段；检查系统音频轨道与语音开关 | 播报包含阶段序号、类型和灵活目标；预告只触发一次；关闭后无 TTS 但仍有短音/震动；AudioTrack 使用导航语音属性且不加载应用内神经模型 |
+| WT-033 | 传感器缺失训练与地图降级 | 在 API 30 AVD 完成至少一个时间阶段，息屏/亮屏、暂停/继续、结束并打开历史详情；再删除测试记录 | 亮屏直接回阶段仪表且无“返回训练”中间层；sensorless 有效训练计入本周并显示时长；地图 JNI/授权不可用不崩溃；删除后只清目标历史且索引为空 |
 | PT-033 | 计划删除隔离 | 准备同分组两项安排，删除其中一项；尝试删除非空分组；重命名分组后编辑另一项 | 只删除目标 planId；兄弟安排、分组及阶段不变；非空分组删除被拒绝；编辑后 groupId 不变 |
 | PT-034 | Cloud→Phone→Watch 收敛 | ChatGPT 修改计划后执行 Phone 同步，读取生产 D1、Phone plan_library_v2、Watch plan_library_v2 和两类 outbox | 三端 revision、组数、安排数和 selectedPlanId 一致；Cloud/Watch outbox 为 0；缺 device token 时 UI 明确阻断 |
+| PT-035 | 大字体导航与空分组 | 在 API 35 AVD 以 1.0/1.3/2.0 遍历今天、训练、历史、睡眠、设置、计划库/详情/编辑器；创建并删除空分组 | 1.6× 起底栏横向图标+短标签且不遮系统区；详情/编辑器隐藏全局底栏；所有控件可滚动到达；空组立即可见、删除不影响 26 个安排 |
 | MCP-013 | 训练周期完整 CRUD | 对临时分组/安排执行 get、upsert group、upsert plan、replace stages、move、select、delete plan、delete empty group；并测试缺失 ID/非空组 | 阶段顺序与目标精确回读；非空组、缺失计划/组返回 conflict 且 revision 不推进；清理后库恢复基线 |
 | WT-004 | 距离计划无 GPS | 室内关闭/遮挡 GPS 后开始并行走 | 开始不阻塞，显示数据来源，实际步数增加 |
 | WT-005 | 户外 GPS | 开阔处等待定位后移动至少 10 m | 轨迹连续，异常跳点不计入，距离合理 |
@@ -67,9 +69,22 @@ git diff --check
 
 ### OWW221 API 30 等价模拟门禁
 
-`powershell -File tools/oww221-avd.ps1 Create/Start/Install/Verify` 创建并核验 `OWW221_API30`：Android 11/API 30、378x496、320 dpi、60 Hz、竖屏和 30 秒息屏。每个 Watch UI 批次至少在该环境遍历主页、计划列表/详情、历史列表/详情、准备页和无传感器降级态，并用 `Sleep`/`Wake` 验证 Activity 恢复；1.0/1.3 font scale 与 TalkBack/keyboard accessibility action 结果记录到忽略目录 `.gradle/oww221-avd/evidence`。
+`powershell -File tools/oww221-avd.ps1 Create/Start/Install/Verify` 创建并核验 `OWW221_API30`：Android 11/API 30、378x496、320 dpi、60 Hz、竖屏和 30 秒息屏。脚本动态读取 SDK/Watch 版本并要求本包 Activity 实际获得焦点。每个 Watch UI 批次至少在该环境遍历主页、计划列表/详情、历史列表/详情、准备页和无传感器降级态，并用 `Sleep`/`Wake` 验证 Activity 恢复；1.0/1.3/2.0 font scale 与 accessibility action 结果记录到忽略目录 `.gradle/oww221-avd/evidence` 或 `.gradle/simulation`。
 
 该门禁验证 framework/API、像素布局、返回/焦点/触控和生命周期，不验证 ColorOS Watch、HeyTap HealthKit、厂商签名权限、真实传感器、BLE Peripheral、GNSS、AMOLED 圆角裁切、功耗或 OEM 后台策略；WT-005/013/014/015/018/023/024/026/027/028 的对应真机部分不得由 AVD 代替。
+
+### Phone API 35 等价模拟门禁
+
+`powershell -File tools/phone-avd.ps1 Create/Start/Install/Verify` 创建并核验 `WatchIntervalsPhone_API35`：API 35、1080×2400、440 dpi、竖屏和本包 Activity 前台焦点。计划 CRUD 只使用显式 synthetic fixture，不清理或写入物理手机。每个 Phone UI 批次至少遍历四个目的地、设置 sheet、计划库/详情/编辑器及 1.0/1.3/2.0 font scale；修改计划数据时复核组数、planId 集合、selectedPlanId 和 tombstone 数量。
+
+该门禁验证 Compose 布局、WindowInsets、系统栏、滚动、语义节点和本地计划 mutation，不替代真实 BLE/LAN、OEM 后台限制、Android Keystore、Cloud 凭据或真机 TalkBack。
+
+### 2026-08-30 双 AVD 完整循环证据（WT-033/PT-035）
+
+- Watch：8 组/26 项 fixture 经分组→安排→详情选择 `sim-plan-4-2`；准备搜星不阻塞，倒计时进入阶段仪表；息屏 3 秒后直接回第 2/3 阶段，无 return overlay。暂停时 GPS 10 秒且训练 wakelock 释放，继续后 GPS 2 秒且 wakelock 重取。结束生成一条 06:47/1 阶段记录；周统计修复后显示 `06:47 · 1 次`。历史地图 JNI 缺失降级后详情不崩；应用内确认删除后 index 为 `[]`、历史目录为空。
+- Watch 字体：1.3 分组索引、2.0 分组页和详情无重叠；最终恢复 font scale 1.0、screen timeout 30000。`oww221-avd.ps1 Verify` 的 7 项检查全 True。
+- Phone：1.0 今天页、1.3 编辑器和完整阶段控件、2.0 今天/训练/历史/睡眠/设置均截图核对；2.0 底栏横排完整，详情/编辑器无全局底栏。空组 8→9→8、安排始终 26；临时安排 26→27→26，原 26 个 ID 缺失 0、selectedPlanId 不变、只写一条 tombstone。最终 Phone/Watch fixture 均为 8 组/26 项/`sim-plan-4-2`，Phone font scale 恢复 1.0。`phone-avd.ps1 Verify` 的 5 项检查全 True。
+- 边界：以上不证明 OWW221 户外 GNSS、ColorOS 后台策略、真实心率、真实 BLE/功耗或物理 Phone 2.0 字体；对应真机门禁保持不变。
 
 ### 0.18.0 OWW221 短测证据（2026-07-25）
 

@@ -25,7 +25,7 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.List;
 
-public class MainActivity extends Activity {
+public class MainActivity extends WatchActivity {
     private static final int REQUEST_PERMISSIONS = 10;
     private static final int REQUEST_BACKGROUND_LOCATION = 11;
     private static final int REQUEST_SLEEP_PERMISSION = 12;
@@ -473,8 +473,8 @@ public class MainActivity extends Activity {
         List<WorkoutRecord> records = HistoryStore.load(this);
         WeeklyStats week = WeeklyStats.of(records, System.currentTimeMillis());
         if (weeklyLine != null) Ui.setTextIfChanged(weeklyLine, week.sessions == 0 ? "暂无记录"
-                : Format.distance(week.meters) + " · " + week.sessions + " 次");
-        if(pagerHistoryList!=null){pagerHistoryList.removeAllViews();Ui.setTextIfChanged(pagerHistorySummary,records.isEmpty()?"还没有训练记录":records.size()+" 次训练 · 本周 "+Format.distance(week.meters));
+                : weeklyVolume(week) + " · " + week.sessions + " 次");
+        if(pagerHistoryList!=null){pagerHistoryList.removeAllViews();Ui.setTextIfChanged(pagerHistorySummary,records.isEmpty()?"还没有训练记录":records.size()+" 次训练 · 本周 "+weeklyVolume(week));
             // Distance-first rows, matching HistoryActivity: the figure a runner scans by leads,
             // the timestamp becomes quiet metadata on the right.
             SimpleDateFormat whenFormat=new SimpleDateFormat("MM/dd HH:mm",Locale.CHINA);
@@ -490,6 +490,10 @@ public class MainActivity extends Activity {
                 row.setOnClickListener(v->startActivity(new Intent(this,HistoryActivity.class).putExtra("record_id",record.id)));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,Ui.dp(this,62));p.bottomMargin=Ui.dp(this,7);pagerHistoryList.addView(row,p);}}
         if(pagerPlanList!=null){pagerPlanList.removeAllViews();ArrayList<Stage> current=PlanStore.load(this);Ui.setTextIfChanged(pagerPlanTitle,PlanStore.name(this));TextView group=Ui.text(this,PlanStore.group(this)+" · "+current.size()+" 项内容",13,Ui.MUTED);pagerPlanList.addView(group,new LinearLayout.LayoutParams(-1,Ui.dp(this,34)));TextView req=Ui.text(this,PlanStore.requirement(this),12,Ui.MUTED);pagerPlanList.addView(req,new LinearLayout.LayoutParams(-1,-2));
             for(int i=0;i<current.size();i++){LinearLayout row=Ui.stageRow(this,i+1,current.get(i),Ui.PANEL);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,Ui.dp(this,52));p.topMargin=Ui.dp(this,7);pagerPlanList.addView(row,p);}}
+    }
+
+    private static String weeklyVolume(WeeklyStats week) {
+        return week.meters > 0 ? Format.distance(week.meters) : Format.duration(week.activeMillis);
     }
 
 

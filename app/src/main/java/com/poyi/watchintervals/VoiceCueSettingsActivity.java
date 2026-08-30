@@ -11,7 +11,7 @@ import android.widget.TextView;
 import java.util.EnumMap;
 
 /** On-watch voice-cue settings and offline TTS preview. */
-public final class VoiceCueSettingsActivity extends Activity {
+public final class VoiceCueSettingsActivity extends WatchActivity {
     private final EnumMap<WorkoutVoiceCuePolicy.Preset, TextView> presetButtons =
             new EnumMap<>(WorkoutVoiceCuePolicy.Preset.class);
     private Switch enabled;

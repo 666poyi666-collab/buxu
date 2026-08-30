@@ -16,6 +16,9 @@ public class PhoneInteractionResourceTest {
         assertTrue(app.contains("连接状态：${state.connection.label}，打开设备设置"));
         assertTrue(app.contains(".clickable(role = Role.Button) { onSetup() }"));
         assertTrue(app.contains("PhoneStatusDot(color = toneColor(state.connection.tone)"));
+        assertTrue(app.contains("PhoneUiContract.connectionStatusLabel("));
+        assertTrue(app.contains("PhoneUiContract.showBottomNavigation("));
+        assertTrue(app.contains("compactLayout = compactLayout"));
         assertFalse(app.contains("imageVector = PhoneIcons.Forward"));
     }
 
@@ -40,6 +43,7 @@ public class PhoneInteractionResourceTest {
         assertTrue(plan.contains("PlanGroupPicker("));
         assertTrue(plan.contains("viewModel.selectDraftGroup(id, name)"));
         assertFalse(plan.contains("onValueChange = { viewModel.updateDraft(group = it) }"));
+        assertFalse(source("PhoneViewModel.kt").contains("if (members.isEmpty()) continue"));
         assertFalse(workout.contains("ActivityRing"));
         assertFalse(workout.contains(".heightIn(min = 250.dp)"));
         assertFalse(workout.contains(".height(250.dp)"));
@@ -83,10 +87,12 @@ public class PhoneInteractionResourceTest {
 
     @Test public void cloudDisconnectIsVisibleBeforeAChatGptEditCanBeMissed() throws Exception {
         String app = source("PhoneApp.kt");
+        String contract = source("PhoneUiContract.kt");
         String plan = source("PlanScreen.kt");
         String setup = source("SetupSheet.kt");
         String viewModel = source("PhoneViewModel.kt");
-        assertTrue(app.contains("云端未连接"));
+        assertTrue(app.contains("PhoneUiContract.connectionStatusLabel("));
+        assertTrue(contract.contains("云端未连接"));
         assertTrue(plan.contains("ChatGPT 计划不会下发"));
         assertTrue(setup.contains("ChatGPT 的计划不会到达手机或手表"));
         assertTrue(viewModel.indexOf("CloudSnapshotSync.sync(app)")

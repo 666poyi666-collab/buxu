@@ -32,10 +32,39 @@ $ErrorActionPreference = 'Stop'
 
 $Package = 'system-images;android-30;google_apis;x86_64'
 $AppId = 'com.poyi.watchintervals'
+$AppBuild = Join-Path $PSScriptRoot '..\app\build.gradle'
 $Width = 378
 $Height = 496
 $Density = 320
-$Sdk = if ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } elseif ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { 'C:\Android\Sdk' }
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+
+function Resolve-AndroidSdk {
+    $candidates = [System.Collections.Generic.List[string]]::new()
+    if ($env:ANDROID_SDK_ROOT) { $candidates.Add($env:ANDROID_SDK_ROOT) }
+    if ($env:ANDROID_HOME) { $candidates.Add($env:ANDROID_HOME) }
+    $properties = Join-Path $ProjectRoot 'local.properties'
+    if (Test-Path -LiteralPath $properties) {
+        $line = Get-Content -LiteralPath $properties |
+                Where-Object { $_ -match '^sdk\.dir=' } |
+                Select-Object -First 1
+        if ($line) {
+            $configured = $line.Substring('sdk.dir='.Length).Replace('\:', ':').Replace('\\', '\')
+            if ($configured) { $candidates.Add($configured) }
+        }
+    }
+    if ($env:LOCALAPPDATA) {
+        $candidates.Add((Join-Path $env:LOCALAPPDATA 'Android\Sdk'))
+    }
+    $candidates.Add('C:\Android\Sdk')
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath (Join-Path $candidate 'platform-tools\adb.exe')) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+    throw 'Android SDK not found in environment, local.properties, or default locations.'
+}
+
+$Sdk = Resolve-AndroidSdk
 $Adb = Join-Path $Sdk 'platform-tools\adb.exe'
 $Emulator = Join-Path $Sdk 'emulator\emulator.exe'
 $AvdManager = Join-Path $Sdk 'cmdline-tools\latest\bin\avdmanager.bat'
@@ -43,6 +72,22 @@ $AvdHome = if ($env:ANDROID_AVD_HOME) { $env:ANDROID_AVD_HOME } else { Join-Path
 $AvdDir = Join-Path $AvdHome "$Name.avd"
 $Serial = "emulator-$Port"
 $EvidenceRoot = Join-Path $PSScriptRoot '..\.gradle\oww221-avd\evidence'
+
+function Get-ExpectedAppVersion {
+    if (-not (Test-Path -LiteralPath $AppBuild)) {
+        throw "Watch build configuration not found: $AppBuild"
+    }
+    $source = Get-Content -Raw -LiteralPath $AppBuild
+    $code = [regex]::Match($source, '(?m)^\s*versionCode\s+(\d+)\s*$')
+    $name = [regex]::Match($source, "(?m)^\s*versionName\s+'([^']+)'\s*$")
+    if (-not $code.Success -or -not $name.Success) {
+        throw 'Unable to read Watch versionCode/versionName from app/build.gradle.'
+    }
+    return [pscustomobject]@{
+        Code = [int]$code.Groups[1].Value
+        Name = $name.Groups[1].Value
+    }
+}
 
 function Assert-Tool([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) { throw "Required Android SDK tool not found: $Path" }
@@ -165,6 +210,14 @@ function Set-Oww221Runtime {
     Invoke-Adb @('shell', 'settings', 'put', 'global', 'animator_duration_scale', '1.0') | Out-Null
     Invoke-Adb @('shell', 'input', 'keyevent', 'KEYCODE_WAKEUP') | Out-Null
     Invoke-Adb @('shell', 'wm', 'dismiss-keyguard') | Out-Null
+    # Pixel Launcher cannot lay out at 378x496 and otherwise leaves a crash dialog over the
+    # product. This AVD is dedicated to WatchIntervals, so remove that unrelated surface.
+    & $Adb -s $Serial shell pm disable-user --user 0 com.google.android.apps.nexuslauncher 2>$null | Out-Null
+    if ((& $Adb -s $Serial shell pm path $AppId 2>$null | Out-String) -match '^package:') {
+        Invoke-Adb @('shell', 'input', 'keyevent', '4') | Out-Null
+        Invoke-Adb @('shell', 'am', 'start', '-n', "$AppId/.MainActivity") | Out-Null
+        Start-Sleep -Milliseconds 500
+    }
 }
 
 function Install-WatchApp {
@@ -202,6 +255,8 @@ function Test-Oww221Avd {
     $rotation = Get-Value @('shell', 'settings', 'get', 'system', 'user_rotation')
     $timeout = Get-Value @('shell', 'settings', 'get', 'system', 'screen_off_timeout')
     $version = Get-Value @('shell', 'dumpsys', 'package', $AppId)
+    $expected = Get-ExpectedAppVersion
+    $focus = Get-Value @('shell', 'dumpsys', 'window')
 
     $checks = [ordered]@{
         api30 = $sdkLevel -eq '30'
@@ -209,7 +264,9 @@ function Test-Oww221Avd {
         density320 = $density -match 'Override density: 320|Physical density: 320'
         portraitLocked = $rotation -eq '0'
         screenTimeout30s = $timeout -eq '30000'
-        appInstalled = $version -match 'versionName=0\.22\.0' -and $version -match 'versionCode=33\b'
+        appInstalled = $version -match ('versionName=' + [regex]::Escape($expected.Name) + '\b') -and
+                $version -match ('versionCode=' + $expected.Code + '\b')
+        appVisible = $focus -match 'mCurrentFocus=.*com\.poyi\.watchintervals/.+[A-Za-z]+Activity'
     }
     $checks.GetEnumerator() | ForEach-Object { '{0}={1}' -f $_.Key, $_.Value }
     if ($checks.Values -contains $false) { throw 'OWW221 AVD verification failed.' }

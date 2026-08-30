@@ -9,6 +9,7 @@ import java.util.TimeZone;
  * Pure Java so the JVM suite covers the week-boundary arithmetic.
  */
 final class WeeklyStats {
+    static final long MIN_SENSORLESS_SESSION_MILLIS = 2 * 60_000L;
     final double meters;
     final long activeMillis;
     final int sessions;
@@ -30,8 +31,13 @@ final class WeeklyStats {
         int sessions = 0;
         for (WorkoutRecord record : records) {
             if (record.startedAt < weekStart || record.startedAt > now) continue;
-            // All-zero records (aborted indoor starts) carry no training volume.
-            if (record.distanceMeters <= 0 && record.steps <= 0) continue;
+            // Sensor permission denial and indoor time targets can produce a legitimate session
+            // with no distance or steps. Keep it once a stage completed or two active minutes
+            // elapsed, while still filtering the short accidental starts this rule was built for.
+            boolean sensorless = record.distanceMeters <= 0 && record.steps <= 0;
+            boolean completedStage = record.stageResults != null && record.stageResults.length() > 0;
+            if (sensorless && !completedStage
+                    && record.durationMs < MIN_SENSORLESS_SESSION_MILLIS) continue;
             meters += record.distanceMeters;
             active += record.durationMs;
             sessions++;

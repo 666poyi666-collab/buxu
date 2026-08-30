@@ -73,6 +73,8 @@ public class WatchWorkoutResourceTest {
                 "app/src/main/java/com/poyi/watchintervals/WorkoutService.java"));
         String training = read(root.resolve(
                 "app/src/main/java/com/poyi/watchintervals/TrainingActivity.java"));
+        String warmup = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/WarmupActivity.java"));
 
         assertTrue(trainingDeclaration.contains("android:launchMode=\"singleTop\""));
         assertTrue(mainDeclaration.contains("android:alwaysRetainTaskState=\"true\""));
@@ -97,6 +99,9 @@ public class WatchWorkoutResourceTest {
         assertTrue(service.contains("onWorkoutSurfaceVisible()"));
         assertTrue(training.contains("service.onWorkoutSurfaceVisible()"));
         assertTrue(service.contains("PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE"));
+        assertTrue(training.contains("onNewIntent(Intent intent)"));
+        assertTrue(warmup.contains("onNewIntent(Intent intent)"));
+        assertTrue(warmup.contains("service.onWorkoutSurfaceVisible()"));
         assertFalse(service.contains("keepTrainingTaskForeground"));
         assertFalse(service.contains("ActivityManager"));
         assertTrue(training.contains("panel.setClickable(false)"));

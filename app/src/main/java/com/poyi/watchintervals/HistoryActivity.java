@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Calendar;
 
-public class HistoryActivity extends Activity {
+public class HistoryActivity extends WatchActivity {
     private WorkoutRecord selected;
     private SwipeTracker swipeTracker;
     private final WatchInteractionPolicy.ConfirmationGate deleteConfirmationGate =

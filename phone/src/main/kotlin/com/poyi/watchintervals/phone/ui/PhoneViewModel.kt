@@ -330,7 +330,6 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
             val group = groups?.optJSONObject(index) ?: continue
             val groupId = group.optString("id")
             val members = summaries.filter { it.groupId == groupId }
-            if (members.isEmpty()) continue
             blocks.add(PlanGroupBlock(groupId, group.optString("name"), members))
             members.forEach { rendered.add(it.id) }
         }

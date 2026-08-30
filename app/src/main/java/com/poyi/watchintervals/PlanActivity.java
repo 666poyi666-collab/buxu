@@ -23,7 +23,7 @@ import java.util.Locale;
 import java.util.Set;
 
 /** Offline selector for the complete phone-authoritative plan library mirror. */
-public class PlanActivity extends Activity {
+public class PlanActivity extends WatchActivity {
     private static final String STATE_DETAIL_PLAN_ID = "detail_plan_id";
     private static final String STATE_GROUP_ID = "group_id";
 

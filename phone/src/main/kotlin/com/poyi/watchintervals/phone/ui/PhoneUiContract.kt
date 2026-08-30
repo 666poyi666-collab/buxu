@@ -1,5 +1,7 @@
 package com.poyi.watchintervals.phone.ui
 
+import com.poyi.watchintervals.phone.connection.ConnectionState
+
 /**
  * 手机端可访问性与触控契约。
  *
@@ -17,6 +19,46 @@ object PhoneUiContract {
 
     /** 页面大标题字号,品牌眉题不得与之等权。 */
     const val PAGE_TITLE_SP = 34
+
+    /** 进入大字体紧凑布局的系统字体缩放阈值。 */
+    const val COMPACT_LAYOUT_FONT_SCALE = 1.6f
+
+    fun usesCompactLayout(fontScale: Float): Boolean =
+        fontScale >= COMPACT_LAYOUT_FONT_SCALE
+
+    fun showBottomNavigation(section: Int, route: PlanRoute): Boolean =
+        section != 0 || route == PlanRoute.Library
+
+    fun connectionStatusLabel(
+        state: ConnectionState,
+        fullLabel: String,
+        cloudConfigured: Boolean,
+        pendingOperations: Int,
+        compact: Boolean
+    ): String {
+        val connection = if (!compact) fullLabel else when (state) {
+            ConnectionState.UNPAIRED -> "未配对"
+            ConnectionState.BLUETOOTH_DISABLED -> "蓝牙关闭"
+            ConnectionState.CONNECTED_BLE,
+            ConnectionState.CONNECTED_BLE_LAN,
+            ConnectionState.CONNECTED_LAN -> "已连接"
+            ConnectionState.SYNCING -> "同步中"
+            ConnectionState.SCANNING,
+            ConnectionState.CONNECTING_BLE,
+            ConnectionState.DISCOVERING_SERVICES,
+            ConnectionState.SUBSCRIBING,
+            ConnectionState.AUTHENTICATING -> "连接中"
+            ConnectionState.DEGRADED_BLE -> "连接较弱"
+            ConnectionState.DISCONNECTED,
+            ConnectionState.BACKOFF -> "重连中"
+            ConnectionState.IDLE -> "等待手表"
+        }
+        return connection + when {
+            !cloudConfigured -> if (compact) " · 云离线" else " · 云端未连接"
+            pendingOperations > 0 -> " · 待处理 $pendingOperations"
+            else -> ""
+        }
+    }
 
     fun stageKindDescription(position: Int, kindName: String): String =
         "修改第${position + 1}阶段类型，当前$kindName"

@@ -34,7 +34,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.poyi.watchintervals.phone.PhoneNavigationSpec
@@ -57,6 +59,7 @@ import com.poyi.watchintervals.phone.ui.theme.PhoneType
 @Composable
 fun PhoneApp(viewModel: PhoneViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val compactLayout = PhoneUiContract.usesCompactLayout(LocalDensity.current.fontScale)
     PhoneTheme {
         Box(
             modifier = Modifier
@@ -67,6 +70,7 @@ fun PhoneApp(viewModel: PhoneViewModel) {
                 Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
                 PhoneTopBar(
                     state = state,
+                    compactLayout = compactLayout,
                     onSync = { viewModel.sync() },
                     onSetup = { viewModel.toggleSetup(!state.setup.visible) }
                 )
@@ -79,16 +83,19 @@ fun PhoneApp(viewModel: PhoneViewModel) {
                     }
                 }
             }
-            PhoneBottomNavigation(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .windowInsetsPadding(WindowInsets.navigationBars),
-                selected = state.section,
-                onSelect = { index ->
-                    if (index == state.section) return@PhoneBottomNavigation
-                    viewModel.selectSection(index)
-                }
-            )
+            if (PhoneUiContract.showBottomNavigation(state.section, state.plan.route)) {
+                PhoneBottomNavigation(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .windowInsetsPadding(WindowInsets.navigationBars),
+                    selected = state.section,
+                    compactLayout = compactLayout,
+                    onSelect = { index ->
+                        if (index == state.section) return@PhoneBottomNavigation
+                        viewModel.selectSection(index)
+                    }
+                )
+            }
             if (state.setup.visible) {
                 SetupSheet(state = state, viewModel = viewModel)
             }
@@ -99,6 +106,7 @@ fun PhoneApp(viewModel: PhoneViewModel) {
 @Composable
 private fun PhoneTopBar(
     state: PhoneUiState,
+    compactLayout: Boolean,
     onSync: () -> Unit,
     onSetup: () -> Unit
 ) {
@@ -135,18 +143,21 @@ private fun PhoneTopBar(
                 PhoneStatusDot(color = toneColor(state.connection.tone), modifier = Modifier.size(8.dp))
                 Spacer(modifier = Modifier.width(PhoneSpace.xs))
                 Text(
-                    text = state.connection.label +
-                        if (!state.cloudConfigured()) " · 云端未连接"
-                        else if (state.connection.pendingOperations > 0) {
-                        " · 待处理 ${state.connection.pendingOperations}"
-                    } else "",
+                    text = PhoneUiContract.connectionStatusLabel(
+                        state = state.connection.state,
+                        fullLabel = state.connection.label,
+                        cloudConfigured = state.cloudConfigured(),
+                        pendingOperations = state.connection.pendingOperations,
+                        compact = compactLayout
+                    ),
                     style = PhoneType.Caption,
                     color = if (!state.cloudConfigured() || state.sync.tone == Tone.Negative) {
                         PhoneColor.Danger
                     } else {
                         PhoneColor.TextDim
                     },
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -186,6 +197,7 @@ private fun PhoneUiState.cloudConfigured(): Boolean =
 @Composable
 private fun PhoneBottomNavigation(
     selected: Int,
+    compactLayout: Boolean,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -211,6 +223,7 @@ private fun PhoneBottomNavigation(
                     label = item.label,
                     accessibilityLabel = item.accessibilityLabel,
                     selected = active,
+                    compactLayout = compactLayout,
                     onClick = { onSelect(index) },
                     modifier = Modifier.weight(1f)
                 )
@@ -225,42 +238,67 @@ private fun NavigationItem(
     label: String,
     accessibilityLabel: String,
     selected: Boolean,
+    compactLayout: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val tint = if (selected) PhoneColor.NavigationText else PhoneColor.NavigationMuted
-    Column(
-        modifier = modifier
-            .heightIn(min = PhoneSize.touchTarget)
-            .clickable { onClick() }
-            .semantics {
-                contentDescription = PhoneUiContract.destinationDescription(
-                    accessibilityLabel, selected
-                )
-            }
-            .padding(vertical = PhoneSpace.xs),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .width(24.dp)
-                .height(3.dp)
-                .background(if (selected) PhoneColor.Move else Color.Transparent)
-        )
-        Spacer(modifier = Modifier.height(PhoneSpace.xxs))
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = tint,
-            modifier = Modifier.size(22.dp)
-        )
-        Text(
-            text = label,
-            style = PhoneType.Caption,
-            color = tint,
-            textAlign = TextAlign.Center
-        )
+    val itemModifier = modifier
+        .heightIn(min = PhoneSize.touchTarget)
+        .clickable { onClick() }
+        .semantics {
+            contentDescription = PhoneUiContract.destinationDescription(
+                accessibilityLabel, selected
+            )
+        }
+    if (compactLayout) {
+        Row(
+            modifier = itemModifier.padding(horizontal = PhoneSpace.xs),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(PhoneSpace.xs))
+            Text(
+                text = label,
+                style = PhoneType.Caption,
+                color = tint,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    } else {
+        Column(
+            modifier = itemModifier.padding(vertical = PhoneSpace.xs),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(24.dp)
+                    .height(3.dp)
+                    .background(if (selected) PhoneColor.Move else Color.Transparent)
+            )
+            Spacer(modifier = Modifier.height(PhoneSpace.xxs))
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(22.dp)
+            )
+            Text(
+                text = label,
+                style = PhoneType.Caption,
+                color = tint,
+                textAlign = TextAlign.Center,
+                maxLines = 1
+            )
+        }
     }
 }
 

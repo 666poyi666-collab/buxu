@@ -19,7 +19,7 @@ import android.widget.TextView;
 import java.util.Locale;
 import java.util.ArrayList;
 
-public class TrainingActivity extends Activity {
+public class TrainingActivity extends WatchActivity {
     public static final String EXTRA_PREPARED_SESSION = "com.poyi.watchintervals.PREPARED_SESSION";
     private static final int CONTROL_PAGE = 0;
     private static final int STAGE_PAGE = 1;
@@ -96,6 +96,9 @@ public class TrainingActivity extends Activity {
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        // A screen-on restore can target the already resumed singleTop instance. That route does
+        // not reconnect the service, so clear the temporary return overlay here as well.
+        if (service != null) service.onWorkoutSurfaceVisible();
     }
 
     private void buildUi() {

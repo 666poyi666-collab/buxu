@@ -117,3 +117,13 @@
 - Watch 计划选择从 26 项扁平长列表改为“分组 → 安排 → 详情”，详情返回当前分组。
 - Cloud MCP 升为 0.5.0：输入从 unknown 改为严格 group/plan/stage schema，增加 watch_get_plan、watch_move_plan、watch_replace_plan_stages；缺失 ID 和非空分组均返回 conflict。TypeScript、静态/schema/D1/Worker 39 项测试全部通过；提交 f1ad28d 已部署为生产 Version 9035dde3-46d6-4831-b49a-63011e134af6。
 - 部署后双域 healthz 均回读完整提交 SHA；readyz 的 storage、OAuth、authority observation 和 revision domain 全部 ready；匿名 tools/list 正确返回 401 与 RFC 9728 resource metadata；Phone 下一次 exchange 继续 HTTP 200。
+
+## 2026-08-30（双 AVD 闭环与边界缺陷修复）
+
+- 建立专用 `OWW221_API30`（378×496）和 `WatchIntervalsPhone_API35`（1080×2400）模拟通道，所有计划 CRUD 使用 8 组/26 项 synthetic fixture；未操作物理设备数据。双脚本动态解析 SDK/版本并验证本包 Activity 前台焦点。
+- Phone 完成 1.0/1.3/2.0 字体矩阵。1.6× 起底栏改为横向图标+短标签，连接状态使用短文案；计划详情/编辑器隐藏全局底栏。空分组不再被 ViewModel 过滤，8→9→8 生命周期不影响 26 项计划。
+- Watch 完成选计划、准备、倒计时、息屏/亮屏、暂停/继续、结束、历史详情和删除全流程。修复 `singleTop` 只触发 `onNewIntent()` 时 overlay 不消失；亮屏后直接回阶段仪表。
+- 模拟训练暴露两项边界：已完成时间阶段但 0 距离/0 步数被周统计排除；Baidu 坐标 JNI 缺失导致历史详情崩溃。现以完成阶段/2 分钟门槛保留有效 sensorless 训练并显示周时长；地图 JNI/初始化失败改为占位，不改原始轨迹。
+- 验证中临时 Watch 历史只通过应用内删除确认清理，最终 index 为 `[]`；Phone/Watch fixture 都恢复为 8 组、26 项、selected `sim-plan-4-2`，字体恢复 1.0，Watch timeout 恢复 30000。
+- 最终门禁：ASCII worktree 双端 JVM 56 suites/239 tests 全通过，双端 Lint/assemble 共 104 tasks 成功；主仓库双 APK 构建、MCP pytest 12/12、24 份 Markdown 本地链接和 `git diff --check` 通过。最终 Watch/Phone APK SHA-256 为 `6ED9732B...B3B6B0` / `8E030EF5...83BBB`。
+- 真机以 `install -r` 无数据覆盖安装：OWW221 与 Xiaomi 回读 `base.apk` 分别逐字匹配本地 APK；生产 Phone/Watch 仍为 revision 40、8 组、26 项且 selectedPlanId 有效，四个前台服务运行。`PoyiWatchAdbLink` / `PoyiPhoneAdbLink` 周期任务 LastResult 均为 0。

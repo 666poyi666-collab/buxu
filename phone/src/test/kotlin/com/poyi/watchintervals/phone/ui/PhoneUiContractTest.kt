@@ -1,6 +1,8 @@
 package com.poyi.watchintervals.phone.ui
 
+import com.poyi.watchintervals.phone.connection.ConnectionState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -93,5 +95,37 @@ class PhoneUiContractTest {
         assertEquals(StageUnit.TIME, StageUnit.fromWire("TIME"))
         assertEquals(StageUnit.DISTANCE, StageUnit.fromWire("DISTANCE"))
         assertEquals(StageUnit.TIME, StageUnit.fromWire("unexpected"))
+    }
+
+    @Test fun largeFontUsesCompactNavigationAndConnectionLabels() {
+        assertFalse(PhoneUiContract.usesCompactLayout(1.3f))
+        assertTrue(PhoneUiContract.usesCompactLayout(1.6f))
+        assertEquals(
+            "未配对 · 云离线",
+            PhoneUiContract.connectionStatusLabel(
+                ConnectionState.UNPAIRED,
+                "请输入手表上的 6 位配对码",
+                cloudConfigured = false,
+                pendingOperations = 0,
+                compact = true
+            )
+        )
+        assertEquals(
+            "已连接 · 待处理 2",
+            PhoneUiContract.connectionStatusLabel(
+                ConnectionState.CONNECTED_BLE_LAN,
+                "蓝牙连接 · LAN 加速",
+                cloudConfigured = true,
+                pendingOperations = 2,
+                compact = true
+            )
+        )
+    }
+
+    @Test fun nestedPlanRoutesHideGlobalNavigation() {
+        assertTrue(PhoneUiContract.showBottomNavigation(0, PlanRoute.Library))
+        assertFalse(PhoneUiContract.showBottomNavigation(0, PlanRoute.Detail("plan-1")))
+        assertFalse(PhoneUiContract.showBottomNavigation(0, PlanRoute.Editor))
+        assertTrue(PhoneUiContract.showBottomNavigation(2, PlanRoute.Editor))
     }
 }
