@@ -736,5 +736,6 @@
 - 实现：PhonePlanLibrary 用稳定 groupId、拒绝删除非空组和缺失 planId；Phone UI 使用分组选择器、明确删除边界和 Cloud 阻断；Cloud-first 同步后投影 Watch；Cloud 首次回填每请求限制 5 项。
 - MCP：补 watch_get_plan、watch_move_plan、watch_replace_plan_stages 和严格 stage schema；保留 revision/幂等合同，缺失实体/非空组返回 conflict。
 - UI：Phone“今天”补当前分组上下文和真实同步状态；Watch 计划库改为分组、安排、详情三级浏览。
-- 外部状态：使用仓库内生产 provisioning 脚本重新签发 device token，脚本只写 token hash 到 D1且不输出凭据；Phone Keystore 只保存 ciphertext/nonce。未部署 Cloud MCP 0.5.0 新工具，生产既有 0.4.0 完整 upsert 工具仍能管理全计划对象。
+- 外部状态：使用仓库内生产 provisioning 脚本重新签发 device token，脚本只写 token hash 到 D1且不输出凭据；Phone Keystore 只保存 ciphertext/nonce。提交 f1ad28deb5d7ff2a36c87c0586b4d85bacad7abd 已部署 Cloud MCP 0.5.0，Version 9035dde3-46d6-4831-b49a-63011e134af6。
+- 部署证据：custom domain 与 workers.dev 的 healthz 均返回 f1ad28d；readyz 全 ready；匿名 MCP 为 401 且携带 protected-resource metadata；部署后 Phone exchange HTTP 200、error 为空。
 - 验证：Cloud MCP typecheck 与 62 项分层测试通过，其中 Worker 39 项；Android ASCII worktree 双端单测通过；生产 Cloud、Phone、Watch 最终 revision 40、8 组、26 项，两个 outbox 均为 0，旧 12 项全包含。

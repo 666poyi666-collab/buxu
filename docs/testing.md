@@ -358,6 +358,7 @@ git diff --check
 - 生产 D1、Phone、Watch 均回读 revision 40、8 个分组、26 个安排，selectedPlanId 存在；Phone→Watch projection outbox 为 0，连接状态 CONNECTED_BLE_LAN、pendingOperations=0。原 Phone 12 个 planId 在新 26 项中缺失数为 0。
 - UI：Phone“今天”显示 7 天周期中的 4 项可扫读列表；计划库显示“新建安排/新建分组”，非空分组删除项父节点 clickable=true 但 enabled=false。OWW221 计划首层显示 8 个分组，进入“减肥”只显示该组 day1。
 - 最终 Watch APK SHA-256：872084D57D47B1AF62DD126CB07F810832BDC26EE873C35933E4909837FB6C08；Phone APK SHA-256：6FF7ACD6D4D3DA6E1DFBDFB33069DB14601E6DDCF3B8DB90134D1A59A587C844。设备 base.apk 与本地逐字一致。
+- Cloud MCP 0.5.0 部署 Version：9035dde3-46d6-4831-b49a-63011e134af6；BUILD_COMMIT 为 f1ad28deb5d7ff2a36c87c0586b4d85bacad7abd。双域 health 200、ready 全绿、匿名 MCP 401，部署后 Phone exchange 200。
 
 ## 6. 当次开发闭环门禁
 

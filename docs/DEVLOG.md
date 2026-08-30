@@ -115,4 +115,5 @@
 - PhonePlanLibrary 修复稳定 groupId：编辑安排不再按可变名称重新建组；删除缺失安排返回 plan_not_found；删除非空分组返回 group_not_empty，不再创建“我的计划”或搬移内容。新增 5 项纯数据 mutation 回归。
 - 手机统一“分组 / 安排 / 阶段”术语，分组使用显式选择器；非空分组删除菜单禁用；单项删除确认明确其他安排和分组不变；首页补当前分组前后安排及真实同步状态。版本升为 Phone 0.25.1（22）。
 - Watch 计划选择从 26 项扁平长列表改为“分组 → 安排 → 详情”，详情返回当前分组。
-- Cloud MCP 源码升为 0.5.0：输入从 unknown 改为严格 group/plan/stage schema，增加 watch_get_plan、watch_move_plan、watch_replace_plan_stages；缺失 ID 和非空分组均返回 conflict。TypeScript、静态/schema/D1/Worker 39 项测试全部通过；新增工具尚未部署，现有生产 upsert 工具已经能完成相同完整对象修改。
+- Cloud MCP 升为 0.5.0：输入从 unknown 改为严格 group/plan/stage schema，增加 watch_get_plan、watch_move_plan、watch_replace_plan_stages；缺失 ID 和非空分组均返回 conflict。TypeScript、静态/schema/D1/Worker 39 项测试全部通过；提交 f1ad28d 已部署为生产 Version 9035dde3-46d6-4831-b49a-63011e134af6。
+- 部署后双域 healthz 均回读完整提交 SHA；readyz 的 storage、OAuth、authority observation 和 revision domain 全部 ready；匿名 tools/list 正确返回 401 与 RFC 9728 resource metadata；Phone 下一次 exchange 继续 HTTP 200。

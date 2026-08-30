@@ -102,7 +102,7 @@
 | REQ-SYNC-020 | 前台、后台与重连同步必须收敛且不重复占用传输 | 完整同步和连接建立同一时刻各只允许一个 owner；已连接 BLE/LAN 不重复扫描；LAN 在线恢复 BLE 时保持可用状态，无可用 transport 才显示 BACKOFF；睡眠前台刷新、全量同步和 Worker 共享一次 31 天分页读取；LAN 的幂等 GET 失败时仅在原 TTL 内建立已认证 BLE 会话并回退，写请求不得自动重放 | 本地策略/服务恢复测试通过，待 PT-030 与 BLE 真机故障注入 |
 | REQ-SYNC-021 | 设备侧必须明确表达 Cloud MCP 是否能下发 | ChatGPT OAuth 连接与 Phone device token 分开显示；缺 device token、exchange 失败、Phone→Watch 待 ACK 不得显示“已同步”；完整同步必须先应用 Cloud 权威库，再投影同一 revision 到 Watch | Phone 0.25.1 真机验证，生产三端 revision 40 |
 | REQ-PLAN-008 | 分组、安排和阶段使用稳定身份与无级联删除 | 编辑安排始终携带 groupId；删除非空分组返回 group_not_empty，不移动或删除安排；删除安排只删除精确 planId，不存在 ID 不推进 revision；确认层说明剩余安排不变 | 自动化覆盖并完成手机实现 |
-| REQ-PLAN-009 | ChatGPT 可完整管理训练周期 | MCP 提供分组创建/重命名/删除空分组，安排创建/读取/修改/移动/删除/选择，以及完整阶段序列替换；stage 明确 kind、unit、target，所有写入使用 expectedRevision 和幂等 ID | Cloud MCP 0.5.0 源码与 Worker 合同测试通过；既有生产工具已可用，新增专用工具待部署 |
+| REQ-PLAN-009 | ChatGPT 可完整管理训练周期 | MCP 提供分组创建/重命名/删除空分组，安排创建/读取/修改/移动/删除/选择，以及完整阶段序列替换；stage 明确 kind、unit、target，所有写入使用 expectedRevision 和幂等 ID | Cloud MCP 0.5.0 已部署生产，Version 9035dde3-46d6-4831-b49a-63011e134af6 |
 
 ### 3.5 手表交互和适配
 
