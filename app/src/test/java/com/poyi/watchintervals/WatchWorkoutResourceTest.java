@@ -207,6 +207,10 @@ public class WatchWorkoutResourceTest {
         assertTrue(script.contains("Get-RememberedEndpoint"));
         assertTrue(script.contains("Save-RememberedEndpoint -Endpoint $endpoint"));
         assertTrue(script.contains("getprop ro.product.model"));
+        assertTrue(script.contains("Test-TcpEndpoint -Endpoint $endpoint"));
+        assertTrue(script.contains("Restart-AdbServerAndReconnect"));
+        assertTrue(script.contains("@($WatchEndpoint) + $networkEndpoints"));
+        assertTrue(script.contains("Invoke-Adb @('kill-server')"));
     }
 
     @Test public void pagerAndCompactActionsKeepTheirAccessibilityContracts() throws Exception {

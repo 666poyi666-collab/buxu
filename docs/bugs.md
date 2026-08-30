@@ -714,10 +714,10 @@
 - 严重度：P2（开发链路）
 - 影响：`tools/watch-link.ps1` 当前保活任务
 - 复现：OWW221 网络 ADB 从 `device` 变成 `offline` 且 USB 不在线时运行 `PoyiWatchAdbLink`；脚本输出没有可达设备并退出 1，没有发出 `adb disconnect/connect`。
-- 根因：`Get-Devices` 的正则只接受 `device` 行，直接丢弃携带已验证 product/model 的 `offline` 行；首次重拨失败后 ADB 又可能清掉 offline 行的 product/model，下一轮无法识别目标。
-- 修复：设备枚举保留 `device/offline` 状态；只有 offline OWW221 TCP 时先删除旧 transport 再重拨；最后一次已验证端点保存到 Git 忽略的 `.work/watch-adb-endpoint.txt`，后续可持续重试。连接成功后必须重新读取 `ro.product.model=OWW221` 才应用显示策略和更新本机状态，其他设备立即断开。
-- 防复发测试：`WatchWorkoutResourceTest.watchAdbKeepaliveRedialsAnOfflineNetworkEndpoint` 固定 offline 解析、旧 transport 删除、端点记忆和型号复核。
-- 验证：用户恢复 OWW221 Wi-Fi 后，脚本从保存的旧端点重拨成功，重新核对 `product/model/device=OWW221`，计划任务 `LastTaskResult=0`；随后第二次 ADB 掉线也由同一脚本恢复。权限修复后的 Watch APK 覆盖安装成功，设备 `base.apk` SHA-256 与本地 `14AF8B4D...D89F` 一致。
+- 根因：`Get-Devices` 的正则只接受 `device` 行，直接丢弃携带已验证 product/model 的 `offline` 行；首次重拨失败后 ADB 又可能清掉 offline 行的 product/model，下一轮无法识别目标。2026-08-31 再次实测发现 platform-tools 还会对死 transport 永久返回 `already connected`，随后所有 shell 均为 `device offline`，单端 disconnect/connect 无法清除本机 server 缓存。
+- 修复：设备枚举保留 `device/offline` 状态；只有 offline OWW221 TCP 时先删除旧 transport 再重拨；最后一次已验证端点保存到 Git 忽略的 `.work/watch-adb-endpoint.txt`。若记忆端点 TCP 可达但型号查询仍为 offline，最后一级重建本机 ADB server；重建前缓存其他在线网络 ADB 端点，启动后立即逐一补连。连接成功后必须重新读取 `ro.product.model=OWW221`，其他型号立即断开。
+- 防复发测试：`WatchWorkoutResourceTest.watchAdbKeepaliveRedialsAnOfflineNetworkEndpoint` 固定 offline 解析、旧 transport 删除、端点记忆、TCP 可达门禁、server 重建、其他网络端点补连和型号复核。
+- 验证：实测死 transport 经普通 disconnect/connect、reconnect 均保持 offline；本机 server 重建后 Watch 恢复 `device/product/model=OWW221`，三个 AVD 自动注册，Phone 与既有平板端点补连。随后 `adb reconnect` 注入单次断线，脚本直接恢复 Watch 且 Phone 保持 device；`PoyiWatchAdbLink` 最近结果回到 0。
 
 ### BUG-069：拒绝可选运动传感器权限后可能反复弹窗，首页 CTA 不说明先授权
 

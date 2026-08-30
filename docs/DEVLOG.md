@@ -127,3 +127,4 @@
 - 验证中临时 Watch 历史只通过应用内删除确认清理，最终 index 为 `[]`；Phone/Watch fixture 都恢复为 8 组、26 项、selected `sim-plan-4-2`，字体恢复 1.0，Watch timeout 恢复 30000。
 - 最终门禁：ASCII worktree 双端 JVM 56 suites/239 tests 全通过，双端 Lint/assemble 共 104 tasks 成功；主仓库双 APK 构建、MCP pytest 12/12、24 份 Markdown 本地链接和 `git diff --check` 通过。最终 Watch/Phone APK SHA-256 为 `6ED9732B...B3B6B0` / `8E030EF5...83BBB`。
 - 真机以 `install -r` 无数据覆盖安装：OWW221 与 Xiaomi 回读 `base.apk` 分别逐字匹配本地 APK；生产 Phone/Watch 仍为 revision 40、8 组、26 项且 selectedPlanId 有效，四个前台服务运行。`PoyiWatchAdbLink` / `PoyiPhoneAdbLink` 周期任务 LastResult 均为 0。
+- 部署后一次 Watch Wi-Fi transport 卡在 `already connected + device offline`，旧保活无法恢复。新增 TCP 可达条件下的最终 ADB server 重建，并在重建后补连原在线网络端点；实测 Watch/Phone 均回到 device，Watch 周期任务 LastResult=0。

@@ -113,6 +113,36 @@ function Save-RememberedEndpoint {
     [System.IO.File]::WriteAllText($EndpointState, $Endpoint + [Environment]::NewLine)
 }
 
+function Test-TcpEndpoint {
+    param([string]$Endpoint)
+    $parts = $Endpoint -split ':'
+    if ($parts.Count -ne 2) { return $false }
+    $client = [System.Net.Sockets.TcpClient]::new()
+    try {
+        $pending = $client.ConnectAsync($parts[0], [int]$parts[1])
+        return $pending.Wait(1500) -and $client.Connected
+    } catch {
+        return $false
+    } finally {
+        $client.Dispose()
+    }
+}
+
+function Restart-AdbServerAndReconnect {
+    param([string]$WatchEndpoint, [object[]]$Devices)
+    $networkEndpoints = @($Devices | Where-Object {
+        $_.IsNetwork -and $_.State -eq 'device' -and $_.Serial -ne $WatchEndpoint
+    } | ForEach-Object { $_.Serial })
+
+    Invoke-Adb @('kill-server') | Out-Null
+    Start-Sleep -Seconds 1
+    Invoke-Adb @('start-server') | Out-Null
+    foreach ($candidate in @($WatchEndpoint) + $networkEndpoints) {
+        Invoke-Adb @('connect', $candidate) | Out-Null
+    }
+    Start-Sleep -Seconds 3
+}
+
 function Invoke-LinkPass {
     Invoke-Adb @('start-server') | Out-Null
     $devices = @(Get-Devices)
@@ -169,6 +199,13 @@ function Invoke-LinkPass {
     }
 
     $model = Invoke-Adb @('-s', $endpoint, 'shell', 'getprop ro.product.model')
+    if ($model -match 'device offline' -and (Test-TcpEndpoint -Endpoint $endpoint)) {
+        # Some platform-tools builds keep returning "already connected" for a dead transport.
+        # A server restart is the only recovery observed on this host. Preserve every other
+        # currently online network endpoint and reconnect it immediately after the restart.
+        Restart-AdbServerAndReconnect -WatchEndpoint $endpoint -Devices $devices
+        $model = Invoke-Adb @('-s', $endpoint, 'shell', 'getprop ro.product.model')
+    }
     if ($model -ne $WatchProduct) {
         Invoke-Adb @('disconnect', $endpoint) | Out-Null
         Write-Host "watch-link: rejected $endpoint because model '$model' is not $WatchProduct."
