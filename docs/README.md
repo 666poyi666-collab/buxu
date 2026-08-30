@@ -29,6 +29,8 @@
 | 编译环境 | JDK 17、Android SDK 35、Gradle 8.14.3 |
 | 发布状态 | 当前 GitHub [v0.22.0 prerelease](https://github.com/666poyi666-collab/WatchIntervals/releases/tag/v0.22.0) 提供 Watch `0.22.0`（33）和 Phone `0.24.0`（20）debug APK。2026-08-18 本地 Android 140 tasks、MCP 12 项、Lint、版本/签名/哈希和跟踪 Markdown 链接门禁通过；Watch APK SHA-256 为 `33C8D7974F12B72BC304E3594D2F15664483C639687666FB1CDCB62D0BC84F99`，Phone 为 `6F084635091650231FAF5972013A7C76DCDBFD9CCC3246AEBB014824A836EB84`。该候选不替代 OWW221/Xiaomi 真机、户外传感器、Doze/重启和 Cloud V3 新版本门禁，故保持 prerelease |
 
+当前工作树候选为 Watch 0.23.0（34）／Phone 0.25.1（22），尚未推送或创建新的 GitHub Release；公开下载仍以上述 v0.22.0 为准。阶段倒计时页新增心率、累计距离和估算热量同屏展示，息屏后由服务按准备/训练状态恢复对应界面，真机门禁见 WT-020/026/027。2026-08-30 已重新 provision 正式 Cloud V3 device token，生产 D1、手机和手表计划库收敛到 revision 40。
+
 ## 事实来源
 
 文档基线综合了当前工作区可见的项目对话、源码、README、真机分析文档、Git 记录，以及 2026-07-23 至 2026-07-24 留存的界面/回归截图名称。截图与临时 XML 没有纳入 Git，它们只作为本地历史证据；源码和已验证运行行为的优先级更高。证据尚未确认的内容统一标为“待确认”，不写成已实现事实。

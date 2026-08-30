@@ -234,6 +234,6 @@ public class WatchBridgeService extends Service {
         if (sleepBridge != null) sleepBridge.close();
         if (commandRouter != null) commandRouter.close();
         try { if (registration != null) getSystemService(NsdManager.class).unregisterService(registration); } catch (Exception ignored) {}
-        workers.shutdownNow(); super.onDestroy();
+        workers.shutdownNow(); BootReceiver.schedule(this); super.onDestroy();
     }
 }

@@ -149,7 +149,7 @@ public final class WatchLinkService extends Service {
     public static JSONObject diagnostics(){try{return new JSONObject().put("service","watch_link").put("securityProtocol","ECDH_P256_AES_GCM_V1").put("replayRejectedCount",replayRejectedCount);}catch(Exception ignored){return new JSONObject();}}
 
     @SuppressWarnings("MissingPermission") private synchronized void closeGatt(){if(advertiser!=null&&advertiseCallback!=null)try{advertiser.stopAdvertising(advertiseCallback);}catch(Exception ignored){}advertising=false;if(server!=null)server.close();server=null;characteristics.clear();connectedDevices.clear();}
-    @Override public void onDestroy(){closeGatt();worker.shutdownNow();if(router!=null)router.close();super.onDestroy();}
+    @Override public void onDestroy(){closeGatt();worker.shutdownNow();if(router!=null)router.close();BootReceiver.schedule(this);super.onDestroy();}
     @Override public IBinder onBind(Intent intent){return null;}
     private static final class Outgoing {final BluetoothDevice device;final byte[] frame;Outgoing(BluetoothDevice device,byte[] frame){this.device=device;this.frame=frame;}}
     private static final class SecureTarget {final BluetoothDevice device;final BleSecureSession session;SecureTarget(BluetoothDevice device,BleSecureSession session){this.device=device;this.session=session;}}

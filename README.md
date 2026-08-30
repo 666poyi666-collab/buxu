@@ -21,6 +21,8 @@
 
 GitHub [v0.22.0 prerelease](https://github.com/666poyi666-collab/WatchIntervals/releases/tag/v0.22.0) 提供当前 `main` 的可安装 debug 包：
 
+当前工作树源码版本已升至 Watch 0.23.0（34）／Phone 0.25.1（22），但尚未推送或创建新的 GitHub Release；上面的 v0.22.0 仍是公开下载候选。2026-08-29 已按用户确认完成双端数据迁移和新签名安装；后续构建必须保持当前本机 debug keystore，否则再次覆盖安装会触发签名不匹配（BUG-064）。
+
 - [Watch 0.22.0（versionCode 33）](https://github.com/666poyi666-collab/WatchIntervals/releases/download/v0.22.0/WatchIntervals-watch-0.22.0-debug.apk)，SHA-256 `33C8D7974F12B72BC304E3594D2F15664483C639687666FB1CDCB62D0BC84F99`
 - [Phone 0.24.0（versionCode 20）](https://github.com/666poyi666-collab/WatchIntervals/releases/download/v0.22.0/WatchIntervals-phone-0.24.0-debug.apk)，SHA-256 `6F084635091650231FAF5972013A7C76DCDBFD9CCC3246AEBB014824A836EB84`
 
@@ -33,6 +35,7 @@ GitHub [v0.22.0 prerelease](https://github.com/666poyi666-collab/WatchIntervals/
 - GPS 距离、步数估距、活动时间、当前配速（分钟/公里）与时速同屏显示，以及标准光学心率
 - 当前速度优先使用 GNSS 芯片自身的多普勒测速，失效时退回距离窗口估算，界面标注实际来源
 - 训练页直接显示实际步数；点击“总距离 · 轨迹”可打开离线实时轨迹图
+- 阶段倒计时页在剩余时间/距离之外同屏显示当前心率、累计距离和估算热量；无心率样本时显示“--”
 - 阶段达标震动并自动推进；最后阶段达标后进入自由记录，直到用户手动结束
 - 前台训练服务、息屏持续定位与 Wi-Fi 休眠保护
 - 训练可立即开始；距离阶段优先使用实时 GPS 轨迹，GPS 精度不足时切换到系统步数传感器估距，并明确标注数据来源
@@ -97,3 +100,11 @@ adb -s WATCH_SERIAL install -r app/build/outputs/apk/debug/app-debug.apk
 .\tools\watch-link.ps1 -Install        # 注册每 5 分钟运行的计划任务
 .\tools\watch-link.ps1 -Uninstall      # 移除计划任务
 ```
+
+手机已开启并授权 ADB-over-TCP 时，`tools/phone-link.ps1` 可按 ADB mDNS 实例名追踪变化后的 IP，并在连接后核对 `ro.product.device`，避免误连同一局域网中的其他 Android 设备。实例名属于本机配置，不写入仓库：
+
+```powershell
+.\tools\phone-link.ps1 -ServiceName <ADB_MDNS_INSTANCE> -ExpectedDevice xaga
+```
+
+开发机可分别注册 `PoyiWatchAdbLink` 与 `PoyiPhoneAdbLink` 定时任务。OWW221 重启后仍需 USB 让脚本重新执行 `adb tcpip 5555`；手机只有在固件保留 `persist.adb.tcp.port=5555` 或系统无线调试仍开启时，才能在无 USB 情况下自动恢复。

@@ -80,7 +80,7 @@ public class HistoryActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(Ui.dp(this, 10), Ui.dp(this, 8), Ui.dp(this, 12), Ui.dp(this, 8));
-        row.setBackground(Ui.background(this, Ui.PANEL, 18));
+        row.setBackground(Ui.background(this, Ui.PANEL, Ui.RADIUS_CARD));
         row.addView(Ui.workoutGlyph(this, Ui.LIME), new LinearLayout.LayoutParams(Ui.dp(this, 38), Ui.dp(this, 38)));
         LinearLayout copy = new LinearLayout(this); copy.setOrientation(LinearLayout.VERTICAL);
         LinearLayout headline = new LinearLayout(this);
@@ -94,7 +94,7 @@ public class HistoryActivity extends Activity {
         copy.addView(data, new LinearLayout.LayoutParams(-1, Ui.dp(this, 20)));
         LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, -1, 1); copyParams.leftMargin = Ui.dp(this, 9); row.addView(copy, copyParams);
         row.setClickable(true); row.setFocusable(true); row.setOnClickListener(v -> showDetail(record));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, Ui.dp(this, 64));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.LIST_ROW));
         params.bottomMargin = Ui.dp(this, 7); row.setLayoutParams(params);
         return row;
     }
@@ -180,9 +180,9 @@ public class HistoryActivity extends Activity {
             if(json.has("elevationGainMeters")){LinearLayout card=detailCard("海拔");card.addView(detailLine("累计爬升",Math.round(json.optDouble("elevationGainMeters"))+" m"));page.addView(card,sectionParams());}
             org.json.JSONArray stages=json.optJSONArray("stageResults");if(stages!=null&&stages.length()>0){LinearLayout card=detailCard("训练阶段");for(int i=0;i<stages.length();i++){org.json.JSONObject stage=stages.getJSONObject(i);card.addView(detailLine(stage.optInt("index")+"  "+stage.optString("name"),Format.duration(stage.optLong("completedAtMs"))));}page.addView(card,sectionParams());}
         } catch(Exception ignored) {}
-        TextView delete = Ui.action(this, "删除本次记录", 15, Ui.RED, Ui.PANEL);
+        TextView delete = Ui.iconAction(this, "删除本次记录", 15, Ui.RED, Ui.PANEL, Ui.Symbol.DELETE);
         deleteAction = delete;
-        LinearLayout.LayoutParams deleteParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 48));
+        LinearLayout.LayoutParams deleteParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.ACTION_PRIMARY));
         deleteParams.topMargin = Ui.dp(this, 12); page.addView(delete, deleteParams);
         delete.setOnClickListener(v -> showDeleteConfirmation());
         detailScroll = new ScrollView(this);
@@ -193,7 +193,7 @@ public class HistoryActivity extends Activity {
         FrameLayout shell = new FrameLayout(this);
         shell.addView(detailScroll, new FrameLayout.LayoutParams(-1, -1));
         detailScrim = new View(this);
-        detailScrim.setBackgroundColor(android.graphics.Color.argb(190, 0, 0, 0));
+        detailScrim.setBackgroundColor(Ui.SCRIM);
         detailScrim.setClickable(true);
         detailScrim.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         detailScrim.setVisibility(View.GONE);
@@ -219,9 +219,9 @@ public class HistoryActivity extends Activity {
         panel.addView(Ui.text(this, "删除后无法恢复", Ui.CAPTION, Ui.MUTED),
                 new LinearLayout.LayoutParams(-1, Ui.dp(this, 24)));
         LinearLayout choices = new LinearLayout(this);
-        TextView cancel = Ui.action(this, "取消", 14, Ui.WHITE, Ui.PANEL_ACTIVE);
+        TextView cancel = Ui.iconAction(this, "取消", 14, Ui.WHITE, Ui.PANEL_ACTIVE, Ui.Symbol.BACK);
         deleteCancel = cancel;
-        TextView confirm = Ui.action(this, "确认删除", 14, Ui.WHITE, Ui.RED);
+        TextView confirm = Ui.iconAction(this, "确认删除", 14, Ui.WHITE, Ui.RED, Ui.Symbol.DELETE);
         LinearLayout.LayoutParams cancelParams =
                 new LinearLayout.LayoutParams(0, Ui.dp(this, 46), 1);
         cancelParams.rightMargin = Ui.dp(this, 7);

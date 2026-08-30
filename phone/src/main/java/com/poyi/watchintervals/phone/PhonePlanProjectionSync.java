@@ -5,10 +5,10 @@ import com.poyi.watchintervals.phone.connection.ConnectionState;
 import com.poyi.watchintervals.phone.connection.WatchConnectionManager;
 
 /** Keeps the phone's authoritative plan library projected onto the paired watch. */
-final class PhonePlanProjectionSync {
+public final class PhonePlanProjectionSync {
     private PhonePlanProjectionSync() {}
 
-    static boolean drainOnce(Context context) {
+    public static boolean drainOnce(Context context) {
         if (PhoneSyncOutbox.size(context) == 0) return true;
         try {
             org.json.JSONObject result = PhoneSyncOutbox.drain(
@@ -20,7 +20,7 @@ final class PhonePlanProjectionSync {
         }
     }
 
-    static boolean shouldAttempt(ConnectionState state, int pendingOperations,
+    public static boolean shouldAttempt(ConnectionState state, int pendingOperations,
                                  boolean drainInFlight) {
         if (pendingOperations <= 0 || drainInFlight || state == null) return false;
         return state == ConnectionState.CONNECTED_BLE

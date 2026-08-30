@@ -30,7 +30,11 @@ final class CloudV3Sync {
     private static final String PREFS = "watch_cloud_v3";
     private static final String STATE = "state";
     private static final String STATE_BACKUP_PREFIX = "state_backup_device_change_";
-    private static final int MAX_ITEMS = 25;
+    // Production D1 may be several WAN round trips away from a phone in China. Sleep records
+    // require idempotency checks and writes per item, so a 25-record first bootstrap can exceed
+    // the 20 s HTTP read window even though the payload is small. Keep each exchange bounded;
+    // MAX_DRAIN_ROUNDS still moves up to 40 items in one foreground/background sync.
+    private static final int MAX_ITEMS = 5;
     private static final int MAX_DRAIN_ROUNDS = 8;
     private static final int MAX_RESPONSE_BYTES = 1_500_000;
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
@@ -53,6 +57,10 @@ final class CloudV3Sync {
             "dataSourceSummary");
 
     private CloudV3Sync() {}
+
+    static int maxItemsPerExchange() {
+        return MAX_ITEMS;
+    }
 
     static void syncAsync(Context context) {
         requestAsync(context, true, true);

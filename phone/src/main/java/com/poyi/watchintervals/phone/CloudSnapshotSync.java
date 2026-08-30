@@ -8,14 +8,14 @@ import android.content.Context;
  * <p>Phone 0.23 routes every invocation to server-readable Cloud V3. The encrypted V2 source
  * and state remain available only for migration rollback and are not dual-written.
  */
-final class CloudSnapshotSync {
+public final class CloudSnapshotSync {
     private CloudSnapshotSync() {}
 
-    static void syncAsync(Context context) {
+    public static void syncAsync(Context context) {
         CloudV3Sync.syncAsync(context);
     }
 
-    static boolean sync(Context context) {
+    public static boolean sync(Context context) {
         return CloudV3Sync.sync(context) == CloudV3Sync.SyncOutcome.SUCCESS;
     }
 }

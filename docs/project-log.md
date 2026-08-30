@@ -2,6 +2,40 @@
 
 本日志保存 Vibe Coding 过程中已经沉淀为产品/工程事实的内容。日期来自文件时间、版本化截图和当前 Git/Release 记录；首个 Git 提交之前的多轮改动没有逐次提交，因此以下按主题重建，不把截图版本号等同于正式发布版本。
 
+## 2026-08-29：训练页息屏恢复与阶段指标收尾（REQ-WORKOUT-009、REQ-UI-007、BUG-052、BUG-063）
+
+- 目标：解决训练中息屏点亮后停在表盘、以及阶段倒计时页只能看到剩余值两个用户痛点。
+- 方案判断：保持 `WorkoutService` 为训练状态唯一所有者；服务动态监听屏幕点亮并复用现有任务栈，避免在 Activity 或通知中复制状态。准备态回 `WarmupActivity`，运行/暂停态回 `TrainingActivity`，2 秒节流避免抬腕广播抖动。
+- 实现：新增 `ACTION_SCREEN_OFF`/`ACTION_SCREEN_ON` 广播接收器的注册/注销生命周期，仅在实际经历息屏后触发 `REORDER_TO_FRONT`/`SINGLE_TOP` 恢复 Intent；准备态回 `WarmupActivity`，运行/暂停态回 `TrainingActivity`，取消准备、完成停止、服务销毁均注销监听。阶段页新增心率、累计距离、估算热量三列，统一从 `Snapshot.LiveView` 刷新，无心率时继续显示 `--`。
+- 工程卫生：将 Kotlin 编译缓存 `.kotlin/` 纳入 `.gitignore`，避免验证过程把本地缓存误纳入提交。
+- 文档同步：README 与 `docs/README.md` 区分最后公开 v0.22.0 与当前未发布的 0.23.0/0.25.0 工作树候选，补记阶段页指标和息屏恢复行为。
+- 回归：`WatchWorkoutResourceTest` 固定恢复分流、节流、注销和阶段三指标契约；`LiveWorkoutStatsTest` 继续覆盖心率聚合与热量计算。原中文路径编译通过，JVM 测试通过 ASCII `W:` 映射；原路径 JVM 测试仍受 BUG-062 阻断。
+- 未覆盖：真实 OWW221 息屏/亮屏广播、通知入口、字体缩放和户外心率/距离仍需 WT-020/026/027 真机证据，不以本地构建冒充。
+
+## 2026-08-29：双端 ADB 常驻与签名链阻断（BUG-064）
+
+- OWW221 经 USB 识别为 `OWW221`，Xiaomi 无线端点经 mDNS 发现并核对为 `xaga / 22041216C`；同一局域网内开放 5555 的华为平板核对为 `DBY-W09` 后排除，没有向非目标设备安装应用。
+- 手机原有 `service.adb.tcp.port` 与 `persist.adb.tcp.port` 均为 5555；手表未 root，写 `persist.adb.tcp.port` 被系统拒绝。两端均固定 `adb_enabled=1`、`wifi_sleep_policy=2` 和充电时保持唤醒；手表由 USB 在重启后重新武装网络 ADB。
+- `watch-link.ps1` 增加 Wi-Fi 启用、DHCP 等待与 USB-only 降级；新增 `phone-link.ps1` 按本机任务参数提供的 mDNS 名称追踪手机地址，并在连接后复核 `ro.product.device`。两个每 5 分钟任务允许电池供电、错过后补跑；主动断开双端网络 ADB 后均在 8 秒内恢复，任务结果为 0。
+- 当前 Watch/Phone APK 证书为 `7046ABAD...A099`，设备链为 `7EB76B41...FCD`，双端 `install -r` 均被 Android 安全拒绝。旧 keystore 全盘查找只剩锁文件，没有私钥；未执行卸载、清数据、重配或凭据重置。现装 Watch 0.21.1（32）和 Phone 0.23.0（19）保持不变。
+
+## 2026-08-29：用户确认后的双端卸载迁移与新版本安装
+
+- 用户明确接受会删除 Android Keystore 配对密钥和 Cloud device token 的迁移风险。卸载前先导出并校验白名单业务数据：Watch `211619B83AF4B697B266615564618E442671076222A2AC2131F01502737A2845`，Phone `E00077C3AF8CDACB8BF4541510CC4CA2B735A2A7CE35D7997270B46092CB1BA3`。
+- OWW221 USB 序列 `2e28bb17` 卸载并安装 Watch `0.23.0`（34）；Xiaomi `xaga / 22041216C` Wi-Fi ADB 安装 Phone `0.25.0`（21）。设备回读 APK SHA-256 分别为 `9E7A80DA946FCB9906B7A8C1D4C0D9D763E04714BD4839D24B4D8222C63895FF`、`6580677175E6135E9292C97401E19429819FCEF79349C6689E1218129A94D20C`。
+- 恢复后 Watch 6 个原有训练目录完成迁移（`HistoryStore` 首次启动把 legacy 索引物化为共 41 条），Phone 计划库 12,960 bytes、睡眠缓存 84,859 bytes 均存在；迁移 tar 已从两台设备删除，本机忽略目录保留回滚备份。
+- 从 Watch 读取配对码仅用于内存种子，Phone 新 `watch_identity.xml` 已迁为 Keystore 加密 pairing secret，明文配对码不存在；Phone→Watch LAN 已验证，BLE 首轮扫描超时后由策略继续退避重试。Cloud V3 device token 未恢复，须重新授权。
+- ADB 端点与保活：USB OWW221、网络 OWW221、Wi-Fi xaga 均在线；`PoyiWatchAdbLink`／`PoyiPhoneAdbLink` 每 5 分钟运行，允许电池供电、错过后补跑，任务结果均为 0。未向局域网内 DBY-W09 华为平板安装任何包。
+
+## 2026-08-30：否决首轮 UI 后的层级重做与连接状态机修正（BUG-065/066）
+
+- 用户明确指出首轮 UI 丑且交互逻辑、手机手表连接均有大问题。复核源码确认上一轮把 Compose/MVI 拆分和令牌集中误当成产品完成，真实首屏仍有品牌/连接/同步/页面标题重复、计划卡套卡和训练装饰挤占数据。
+- 比较路径：继续微调颜色/圆角成本低但无法修正信息架构；重做页面结构改动较大但能保留既有 ViewModel/数据合同。选择后者，数据层、计划 CRUD、WorkoutService 和 Cloud 合同不变，只调整 UI 组合与连接编排。
+- 手机改动：顶部只保留品牌、同步/设置图标和连接事实带；计划分组改为 section+图标操作，安排为唯一重复可点击项；训练页用小型阶段环配固定指标区；连接设置展示主/批量链路、最近成功、pending 和断开原因，LAN 地址降为高级字段。
+- 手表改动：主页发光圆形开始按钮改为全宽主操作；默认训练页增加训练时间/阶段剩余双主读数，核心运动指标无需切到阶段页才能判断节奏。
+- 连接根因与修复：重复 `connect()` 会重开 BLE；BLE 失败、LAN 成功后又被 BACKOFF 覆盖，下一轮因 LAN 短路而不再恢复 BLE。现增加连接 single-flight、BLE/LAN 短路和强制 BLE 恢复分支；LAN 在线不公开 BACKOFF。双端 BootReceiver 独立启动 API/BLE 服务，服务销毁时重新武装 watchdog。Phone `am crash` 故障注入确认原闹钟仍要等待约 11 分钟，故双端 watchdog 从 15 分钟改为 5 分钟恢复上限。
+- 本地证据：双端 compile/assemble/Lint 和 ASCII 映射 JVM 测试通过；`ConnectionRecoveryPolicyTest`、`PhoneServiceRecoveryResourceTest`、`WatchWorkoutResourceTest` 覆盖新合同。真机仍需手机解锁后截图，OWW221 恢复 ADB 后覆盖安装并执行 PT-026/030、WT-020 与 BLE-003/005。
+
 ## 2026-08-18：当前双端候选推送与 GitHub 下载发布（REQ-RELEASE-20260818-001）
 
 - 目标：将当前 `main` 的 Watch `0.22.0`（33）和 Phone `0.24.0`（20）提供为公开、可直接下载的 GitHub 候选，同时保留未跟踪的用户文件 `项目总览.md`，不把 build/分析/虚拟环境产物纳入 Git。
@@ -654,3 +688,53 @@
 - 基础 BLE 证据：双端安装后 Watch 日志确认 `advertising_ready`，随后 GATT `state=2/status=0`、MTU 517、四项订阅成功并出现 `secure_session_ready`。这证明当前候选安装后一次安全会话自动恢复，不证明偶发断联已关闭，也不替代双端重启、蓝牙开关、分页续传和非充电长测。
 - 隐私处理：尝试只读截图烟测时捕获画面与目标 Activity 不一致，不能作为 PT-026 证据；本地 PNG 和 UI hierarchy XML 已立即永久删除，没有写入 Git、文档附件或安装包。
 - 验证边界：本批证明两端 USB 识别、同签名覆盖、数据保留、APK 字节一致、进程启动、Watch 活动训练入口恢复和一次基础安全 BLE 重连；未主动暂停或结束用户现有会话，也未冒充 PT-026/027/028、WT-026/027 或 BLE-004/005/009/010 的完整验证。
+
+## 2026-08-30：手机交互第三轮找茬（REQ-UI-006/011、BUG-067、PT-026/029）
+
+- 目标：继续处理用户否决首轮设计后仍残留的交互问题，不把 Compose 拆分和编译成功当作体验完成；重点核对真实点击命中、键盘/系统栏、长字体与计划编辑的状态可见性。
+- 发现与根因：连接事实带只给中间文字列绑定点击；设置底板固定 560dp、禁用 clickable 不能稳定消费空白点击；计划分组仍并排添加/编辑/删除；阶段类型与单位以循环按钮隐藏下一状态，类型变化还重置同单位目标；训练实时卡固定 250dp。根因是前轮按组件清单验收，没有按父级手势、可用高度和直接操作模型验收。
+- 实现：`PhoneApp` 将连接带收敛为整行按钮角色并增加 `Forward`；`SetupSheet` 使用可用高度、IME/导航栏避让和内部点击消费；`PlanScreen` 使用新增+更多菜单、显式类型/单位分段选择与图标移动/删除；`PhoneViewModel` 增加精确选择动作并在同单位变化时保留目标；`WorkoutScreen` 改为最小高度。
+- 防复发：新增 `PhoneInteractionResourceTest`，补强 `PhonePlanUiModelTest`；BUG-067、需求、设计基线、PT-026/029 和 CHANGELOG 同步更新。
+- ADB 保活补修：`watch-link.ps1` 原先只解析 `device`，OWW221 TCP 进入 `offline` 后根本不重拨；现保留状态并删除旧 transport 后连接，最后一次已验证端点写入 Git 忽略的 `.work`，即使后续 offline 行不再携带 product 也能继续尝试。每次成功后再次读取 `ro.product.model`，非 OWW221 立即断开。新增 Watch 源契约并登记 BUG-068。
+- 最终本地门禁：ASCII `W:` 映射下 `:phone:testDebugUnitTest :app:testDebugUnitTest` 成功，51 个 suite 合计 210 项、0 failure/error；`:app/:phone lintDebug + assembleDebug` 94 tasks 成功；`git diff --check` 通过。临时 `W:` 映射已删除。
+- Phone 真机：当前 debug APK 无数据覆盖安装成功，本地与设备 `base.apk` SHA-256 同为 `BEB13CECC0EC4B4AEC18FA771A4B334ECCA9FF28157ED660FAB1BD26A49D078C`；两个前台服务在运行，持久状态为 `CONNECTED_BLE`、pending 0、无断开原因。未启动 Activity，手机前台仍由用户掌控，故不生成非步序截图也不冒充 PT-026/029。
+- 外部阻断：OWW221 在 ADB 中为旧 TCP `offline`，Windows 当前没有枚举到 OWW221 USB，网络端点重拨失败；因此本轮最终 Watch APK 尚未再次覆盖安装，Watch 视觉与 BUG-068 恢复仍缺真机证据。唯一关闭条件是重新插稳并解锁手表 USB 调试，或让手表 Wi-Fi 回到同网，随后触发 `PoyiWatchAdbLink`、覆盖安装并执行 WT-020/PT-026/029/030。
+
+## 2026-08-30：OWW221 Wi-Fi 恢复后的真机闭环（BUG-066/068/069、WT-020/029）
+
+- ADB 与安装：用户打开 Watch Wi-Fi 后，`watch-link.ps1` 从本机忽略状态恢复旧 TCP 端点并重新核对 OWW221，任务结果为 0；第二次掉线同样恢复，BUG-068 转 Verified。权限修复后的 Watch `0.23.0` 再次覆盖安装成功，设备/本地 `base.apk` SHA-256 同为 `14AF8B4D8FC446109D0249E2D58CC0DEE66B3DEAEC2D0941541DF05CAC69D89F`。
+- 视觉证据：只在 `com.poyi.watchintervals/.MainActivity` 为当前焦点且电源 `Awake / ON` 后采集 378×496 截图。主页全宽 CTA、历史四条预览/固定完整历史入口、计划五阶段/固定选择入口和页码均可见；计划列表纵向滚动时横向 pager 没有抢手势。未开始训练，避免生成或删除用户历史，因此训练五屏仍需活动会话下补测。
+- 权限 Bug：拒绝态 hierarchy 显示“授权并开始训练”和三项未授权；原回调在定位已授、心率/步数拒绝后再次进入完整请求。新增独立继续路径，可选传感器拒绝降级，必要定位继续阻断距离计划；授予现有三项运行时权限后 warning 行消失、CTA 恢复“开始训练”。登记 REQ-WORKOUT-010、BUG-069、WT-029 和源契约。
+- 进程恢复：`am crash com.poyi.watchintervals` 使 PID `18322` 退出并由 `18773` 接管；系统日志记录 Bridge 1 秒重启、BLE advertiser binder death、约 2 秒后 `advertising_ready`，WatchBridge/WatchLink 均归属新进程。Phone 持久状态全程为 `CONNECTED_BLE`、pending 0、无断开原因，随后 MainActivity 正常重新成为焦点。
+- 验证边界：OWW221 固件会立即撤销 `svc bluetooth disable`，所以本批不声称蓝牙开关或 LAN 在线断 BLE 的 PT-030 矩阵通过；权限拒绝后的实际训练降级也未通过制造/删除测试记录来验证，保留 WT-029。手机视觉仍等待用户主动打开步序后执行 PT-026/029。
+
+## 2026-08-30：双端视觉语言回炉与 Phone 真机复核（BUG-065/070、REQ-UI-006/007/011）
+
+- 用户判断双端仍“不成熟”后，主动打开 Phone 步序并采集计划、训练、历史、睡眠和设置的真实 1080×2460 画面；证据确认问题不是细节抛光，而是浮动玻璃底栏、34sp 巨标题、粉绿混搭、同权绿色按钮、装饰圆环、重复分组层级和技术设置直出共同造成的原型感。
+- 方案取舍：继续润色原玻璃/大标题方案成本低但会保留结构性噪声；改成安静的运动数据工具需要同时调整令牌和页面。采用 Phone 中性画布、品牌红、8dp/0 elevation 数据面、24sp 标题、60dp 深色导航；Watch 纯黑画布、无 halo、7–10dp 圆角、34 图标、54/40 操作与 60 列表行。
+- Phone 页面：计划顶部大文字按钮改为图标，当前安排和选中态统一品牌红；训练以状态/时间/三指标为主，移除粉色环；历史按距离/用时/平均配速分列，避免长行折行；设置只展示连接事实，LAN 与 Cloud 凭据按需展开，删除面向用户的架构说明。
+- BUG-070：`/v1/status` 成功但无 workout 块时 Start 被成功分支漏掉；统一 `actionsFor(live, transportReady)` 后，Phone 真机空闲页面出现全宽“开始训练”。测试只验证按钮存在，没有触发训练或改动用户历史。
+- 真机结果：Phone 新候选已覆盖安装，计划/训练/历史/折叠设置截图显示悬浮底卡、粉绿混搭、装饰环和技术字段均已消失；目的地 hierarchy 正确报告选中状态。Watch 安装阶段旧 TCP ADB 一度拒绝，用户恢复 USB 后同时得到 USB/TCP OWW221 transport，最终用 USB 无数据覆盖安装；378×496 主页确认无 halo、10dp 按钮和低饱和运动色生效。
+- 用户再次指出上一版仍保留旧骨架后，验收标准改为“第一眼能看出导航、页面构图和主要操作不同”。Phone 删除独立连接卡，状态并入品牌顶栏；底栏改为深色控制条并与系统导航栏连续；当前计划和训练实时数据使用深色性能面板。Watch 当前计划进入独立深色面板，新增 RUN/WALK/REST 色带，品牌改红，训练绿只用于开始/实时状态。
+- Watch 新 hierarchy 在 378×496 上为计划面板 y=72–192（含色带）、双仪表 y=204–277、开始 y=316–400、更换计划 y=415–469；Phone 新根层截图确认顶栏状态与深色控制条生效。Phone 焦点被其他应用抢占的一次误截图/层级文件已立即从电脑和手机删除。
+- 信息架构版 Phone 安装后，通知栏与 Launcher 连续占用 `mCurrentFocus`；取证脚本未满足“当前焦点精确为步序”的截图均跳过或立即删除，本地与设备不留文件。Watch 当前计划面板点击已真机进入 PlanActivity，成为本批明确交互证据。
+- 信息架构终改：Phone 第一目的地不再直接铺计划库，改为“今天”任务页；当前安排、阶段顺序和打开训练控制是首屏主流程，管理计划进入独立库视图并保留详情/编辑。导航命名改成今天/训练/记录/恢复。Watch 当前计划面板整块增加 40dp+ 点击语义，真机点击进入 PlanActivity，返回后数据不变。
+- 全页面收敛：Watch 新增 PLAY/PAUSE/STOP/LIST/BACK/FORWARD/DELETE/CHECK/HISTORY 原创 Drawable，Main/Plan/Warmup/Training/History 的主要动作全部接入；旧 glow、oval action、Unicode 暂停/停止/返回/chevron 删除。Warmup 真机显示来源状态格和全宽开始/取消，未启动训练即安全退出。Phone `PhoneButton` 新增图标槽，Today/Plan/Workout/Setup 的命令图标统一；HistoryDetail 的系统导航、卡片圆角/elevation 与 Compose 一致。
+- 最终门禁与产物：双端 JVM 51 个 suite 共 216 项、0 failure/error；双端 `lintDebug + assembleDebug` 94 tasks 成功；Markdown 本地链接和 `git diff --check` 通过。Phone 尺寸版本地/设备 APK SHA-256 同为 `85034347B120D25E44DFB02F213FAE5C052A5A66D5F970AE6699D903180086FC`；Watch 尺寸版本地/设备 APK SHA-256 同为 `BD53786993616235676FAB79FA6FB38CA498C356FDB269EF301998F3CA6195A2`。
+
+## 2026-08-30：运动开始可靠性与功耗修复（BUG-071、WT-030/031）
+
+- 复现：真机准备页点击开始后抓到 2、1、GO，随后进入 TrainingActivity；旧实现的 850ms 相对延时只靠 Activity callback，onStop 会取消。审计同时确认 preparing/running 共用 1 秒/0 米 GNSS 订阅，并从准备开始持有 4 小时 partial wakelock。
+- 实现：新增 `WorkoutPreparationPolicy`，把 3 秒开始过程移进 `WorkoutService` 绝对 deadline；重复点击只加入同一 deadline，Activity 离开后返回继续剩余时基，GO 只调用一次 begin。GPS/NETWORK 首 fix callback 清空 in-flight signal，15 秒无 fix 才重试；准备/训练/暂停位置 cadence 为 1s/2s/10s，训练开始才持有 wakelock、暂停释放，主 tick 1s。
+- 真机清理：测试期间产生的两条 0 米记录已在 Watch 历史详情内分别打开删除确认并确认删除，应用索引恢复 6 条原有历史；未直接修改文件。
+- 验证：Watch 编译、单测和双端构建已通过；真实户外首 fix、电量和息屏中途返回列为 WT-030/031，仅在有实际 BatteryStats/GNSS 数据后关闭。
+# 2026-08-30：计划数据安全、Cloud 凭据恢复与三端收敛
+
+- 目标：解决 ChatGPT 增改计划未到设备、手机分组/安排删除语义危险，以及双端计划库面对 26 项真实数据时的信息架构问题。
+- 事实：Phone 缺少 Cloud V3 device credential；旧本地库为 4 组/12 项/revision 1788081988193，Watch 同步为相同旧库；生产 D1 为 revision 40。
+- 数据保护：修改前通过 run-as 备份 Phone plan_library_v2.xml 与 sync_outbox.xml 到忽略目录并计算 SHA-256。没有清数据、没有删除计划、没有用合成空库覆盖设备。
+- 实现：PhonePlanLibrary 用稳定 groupId、拒绝删除非空组和缺失 planId；Phone UI 使用分组选择器、明确删除边界和 Cloud 阻断；Cloud-first 同步后投影 Watch；Cloud 首次回填每请求限制 5 项。
+- MCP：补 watch_get_plan、watch_move_plan、watch_replace_plan_stages 和严格 stage schema；保留 revision/幂等合同，缺失实体/非空组返回 conflict。
+- UI：Phone“今天”补当前分组上下文和真实同步状态；Watch 计划库改为分组、安排、详情三级浏览。
+- 外部状态：使用仓库内生产 provisioning 脚本重新签发 device token，脚本只写 token hash 到 D1且不输出凭据；Phone Keystore 只保存 ciphertext/nonce。未部署 Cloud MCP 0.5.0 新工具，生产既有 0.4.0 完整 upsert 工具仍能管理全计划对象。
+- 验证：Cloud MCP typecheck 与 62 项分层测试通过，其中 Worker 39 项；Android ASCII worktree 双端单测通过；生产 Cloud、Phone、Watch 最终 revision 40、8 组、26 项，两个 outbox 均为 0，旧 12 项全包含。

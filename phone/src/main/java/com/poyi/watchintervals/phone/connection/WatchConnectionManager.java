@@ -24,7 +24,7 @@ public final class WatchConnectionManager {
     public static WatchConnectionManager get(Context context){if(instance==null)synchronized(WatchConnectionManager.class){if(instance==null)instance=new WatchConnectionManager(context.getApplicationContext());}return instance;}
 
     private final Context context;private final WatchIdentityStore identity;private final BleGattTransport ble;private final LanHttpTransport lan=new LanHttpTransport();private final ConnectionBackoff backoff=new ConnectionBackoff();private final Handler main=new Handler(Looper.getMainLooper());private final List<Observer> observers=new CopyOnWriteArrayList<>();
-    private volatile ConnectionState state=ConnectionState.IDLE;private volatile String reason="";private volatile long lastSeen,lastRequest;private volatile boolean lanVerified;private volatile int pendingOperations;private boolean reconnectScheduled;
+    private volatile ConnectionState state=ConnectionState.IDLE;private volatile String reason="";private volatile long lastSeen,lastRequest;private volatile boolean lanVerified;private volatile int pendingOperations;private boolean reconnectScheduled;private CompletableFuture<TransportSession> connectAttempt;
     private final java.util.concurrent.atomic.AtomicBoolean lanVerifyInFlight=new java.util.concurrent.atomic.AtomicBoolean();
 
     private WatchConnectionManager(Context context){this.context=context;identity=new WatchIdentityStore(context);ble=new BleGattTransport(context,identity);ble.subscribe(event->{if(WatchCloudBridgeEvent.isHistoryChanged(event))main.post(()->EncryptedWatchSyncWorker.schedule(this.context));});ble.setStateListener((next,cause)->{ConnectionState previous=state;setState(next,cause);if(next==ConnectionState.DISCONNECTED&&!"requested".equals(cause)&&(previous==ConnectionState.CONNECTED_BLE||previous==ConnectionState.CONNECTED_BLE_LAN||previous==ConnectionState.SYNCING))scheduleReconnect();});restoreLan();}
@@ -38,7 +38,53 @@ public final class WatchConnectionManager {
     public void observe(Observer observer){if(observer==null)return;observers.add(observer);main.post(()->observer.onConnectionState(snapshot()));}
     public void removeObserver(Observer observer){observers.remove(observer);}
 
-    public synchronized CompletableFuture<TransportSession> connect(){reconnectScheduled=false;if(!identity.isPaired()&&identity.pairingCode().length()!=6){setState(ConnectionState.UNPAIRED,"pairing_required");CompletableFuture<TransportSession> result=new CompletableFuture<>();result.completeExceptionally(new IllegalStateException("pairing_required"));return result;}CompletableFuture<TransportSession> result=new CompletableFuture<>();if(lan.isAvailable()&&!lanVerified)verifyLan();ble.connect().whenComplete((session,error)->{if(error==null){backoff.reset();lastSeen=System.currentTimeMillis();if(lan.isAvailable())lan.configure(lan.host(),identity.lanCredential());setState(ConnectionState.CONNECTED_BLE,null);result.complete(session);main.post(()->{EncryptedWatchSyncWorker.schedule(context);com.poyi.watchintervals.phone.PhonePlanProjectionWorker.schedule(context);});verifyLan();}else if(lan.isAvailable())lan.connect().whenComplete((lanSession,lanError)->{if(lanError==null){lanVerified=true;lastSeen=System.currentTimeMillis();setState(ConnectionState.CONNECTED_LAN,"ble_unavailable");result.complete(lanSession);main.post(()->{EncryptedWatchSyncWorker.schedule(context);com.poyi.watchintervals.phone.PhonePlanProjectionWorker.schedule(context);});scheduleReconnect();}else{result.completeExceptionally(lanError);scheduleReconnect();}});else{result.completeExceptionally(error);scheduleReconnect();}});return result;}
+    public synchronized CompletableFuture<TransportSession> connect(){return connect(false);}
+
+    private synchronized CompletableFuture<TransportSession> connect(boolean forceBleRecovery){
+        reconnectScheduled=false;
+        if(!identity.isPaired()&&identity.pairingCode().length()!=6){
+            setState(ConnectionState.UNPAIRED,"pairing_required");
+            CompletableFuture<TransportSession> result=new CompletableFuture<>();
+            result.completeExceptionally(new IllegalStateException("pairing_required"));
+            return result;
+        }
+        if(ConnectionRecoveryPolicy.isBleReady(state)){
+            return CompletableFuture.completedFuture(
+                    new TransportSession(TransportType.BLE,identity.watchDeviceId(),ble.mtu()));
+        }
+        if(ConnectionRecoveryPolicy.mayReuseLan(state,lanVerified,forceBleRecovery)){
+            return CompletableFuture.completedFuture(
+                    new TransportSession(TransportType.LAN,identity.watchDeviceId(),0));
+        }
+        if(connectAttempt!=null&&!connectAttempt.isDone()) return connectAttempt;
+
+        CompletableFuture<TransportSession> result=new CompletableFuture<>();
+        connectAttempt=result;
+        if(lan.isAvailable()&&!lanVerified)verifyLan();
+        ble.connect().whenComplete((session,error)->{
+            if(error==null){
+                backoff.reset();
+                lastSeen=System.currentTimeMillis();
+                if(lan.isAvailable())lan.configure(lan.host(),identity.lanCredential());
+                setState(ConnectionState.CONNECTED_BLE,null);
+                result.complete(session);
+                synchronized(WatchConnectionManager.this){if(connectAttempt==result)connectAttempt=null;}
+                main.post(()->{EncryptedWatchSyncWorker.schedule(context);com.poyi.watchintervals.phone.PhonePlanProjectionWorker.schedule(context);});
+                verifyLan();
+            }else if(lan.isAvailable())lan.connect().whenComplete((lanSession,lanError)->{
+                if(lanError==null){
+                    lanVerified=true;lastSeen=System.currentTimeMillis();
+                    setState(ConnectionState.CONNECTED_LAN,"ble_unavailable");
+                    result.complete(lanSession);
+                    synchronized(WatchConnectionManager.this){if(connectAttempt==result)connectAttempt=null;}
+                    main.post(()->{EncryptedWatchSyncWorker.schedule(context);com.poyi.watchintervals.phone.PhonePlanProjectionWorker.schedule(context);});
+                    scheduleReconnect();
+                }else{result.completeExceptionally(lanError);synchronized(WatchConnectionManager.this){if(connectAttempt==result)connectAttempt=null;}scheduleReconnect();}
+            });
+            else{result.completeExceptionally(error);synchronized(WatchConnectionManager.this){if(connectAttempt==result)connectAttempt=null;}scheduleReconnect();}
+        });
+        return result;
+    }
     public void connectNow(){backoff.reset();connect();}
     /** Probes the LAN transport on its own. BLE on this watch fails often enough (gatt_147) that
      *  LAN readiness must not depend on a successful BLE cycle first. */
@@ -99,8 +145,8 @@ public final class WatchConnectionManager {
     }
     public String requestBlocking(String method,String path,String body,long ttlMillis)throws Exception{return request(method,path,body,ttlMillis).get(Math.max(5_000L,ttlMillis<=0?20_000L:ttlMillis+2_000L),TimeUnit.MILLISECONDS).body;}
     private WatchTransport select(String path){boolean control=path.equals("/v1/status")||path.startsWith("/v1/control/")||path.equals("/v1/location")||path.equals("/v1/sync/operations")||path.startsWith("/v1/plan");if(control&&ble.isAvailable()&&(state==ConnectionState.CONNECTED_BLE||state==ConnectionState.CONNECTED_BLE_LAN||state==ConnectionState.SYNCING))return ble;if(!control&&lanVerified&&lan.isAvailable())return lan;if(ble.isAvailable()&&(state==ConnectionState.CONNECTED_BLE||state==ConnectionState.CONNECTED_BLE_LAN||state==ConnectionState.DEGRADED_BLE))return ble;if(lanVerified&&lan.isAvailable())return lan;return null;}
-    public synchronized void disconnect(){reconnectScheduled=false;ble.disconnect();lan.disconnect();lanVerified=false;setState(ConnectionState.DISCONNECTED,"requested");}
-    private synchronized void scheduleReconnect(){if(reconnectScheduled||!identity.isPaired()&&identity.pairingCode().length()!=6)return;reconnectScheduled=true;long delay=backoff.nextDelayMillis();setState(ConnectionState.BACKOFF,"retry_in_"+delay);main.postDelayed(()->{synchronized(WatchConnectionManager.this){reconnectScheduled=false;}connect();},delay);}
+    public synchronized void disconnect(){reconnectScheduled=false;CompletableFuture<TransportSession> pending=connectAttempt;connectAttempt=null;if(pending!=null&&!pending.isDone())pending.completeExceptionally(new IllegalStateException("disconnected"));ble.disconnect();lan.disconnect();lanVerified=false;setState(ConnectionState.DISCONNECTED,"requested");}
+    private synchronized void scheduleReconnect(){if(reconnectScheduled||!identity.isPaired()&&identity.pairingCode().length()!=6)return;reconnectScheduled=true;long delay=backoff.nextDelayMillis();if(ConnectionRecoveryPolicy.shouldExposeBackoff(lanVerified))setState(ConnectionState.BACKOFF,"retry_in_"+delay);else{reason="ble_retry_in_"+delay;persist();publish();}main.postDelayed(()->{synchronized(WatchConnectionManager.this){reconnectScheduled=false;}connect(true);},delay);}
     private void setState(ConnectionState next,String cause){state=next;reason=cause==null?"":cause;persist();publish();}
     private void persist(){context.getSharedPreferences("watch_connection_state",Context.MODE_PRIVATE).edit().putString("state",state.name()).putString("transport",state==ConnectionState.CONNECTED_BLE_LAN?"ble_lan":state==ConnectionState.CONNECTED_BLE?"ble":"none").putString("watchDeviceId",identity.watchDeviceId()).putLong("lastSeenAt",lastSeen).putLong("lastSuccessfulRequestAt",lastRequest).putString("lastDisconnectReason",reason).putInt("rssi",ble.rssi()).putBoolean("lanAvailable",lanVerified).putInt("pendingOperations",pendingOperations).apply();}
     private void publish(){Snapshot value=snapshot();for(Observer observer:observers)main.post(()->observer.onConnectionState(value));}

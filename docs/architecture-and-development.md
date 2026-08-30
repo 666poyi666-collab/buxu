@@ -74,13 +74,13 @@
 
 ### 2.2 手机视觉层
 
-手机继续使用 Java 动态 View，不引入另一套 UI 框架。`Palette`/`PhoneColorSpec` 提供日光亮色内容层、克制的功能浮层和原创训练强调色，并允许 JVM 直接验证亮度与对比度；`MainActivity` 保持计划/训练/历史/睡眠四个顶级目的地，滚动内容与底部浮动导航分层。底栏和独立可滚动连接设置层使用半透明白色渐变、细描边、轻阴影与同心圆角，内容卡保持浅色实心，避免把玻璃启发式效果扩散成卡片墙。系统栏采用亮色 edge-to-edge，`WindowInsets` 是顶部、底栏和滚动尾部安全区的运行时事实，不再只依赖固定系统资源高度；底栏高度随 font scale 增长，避免大字体被固定 66dp 容器裁切。
+Phone 主界面使用 Compose + MVI，`PhoneViewModel` 持有唯一 `PhoneUiState`；旧 Java View 只保留独立 `HistoryDetailActivity`，并消费同一 `PhoneColorSpec`。内容为日光中性面，当前计划/训练仪表和 60dp 贴底导航为高对比深色面；状态并入顶栏，设置独立滚动并折叠技术字段。`WindowInsets` 驱动顶部、底栏、IME 和滚动尾部安全区，底栏随 font scale 增长但不低于 60dp。
 
-`PhoneNavigationSpec` 固定目的地顺序、短标签和可访问名称；`PhoneTabView` 提供至少 48dp 触控区、选中状态与胶囊反馈；`PhoneSymbolView` 在 24×24 视口绘制项目原创的计划、训练、历史、睡眠、返回与定位图形，不依赖 OEM 字体中的 Unicode 图标。Phone 与 Watch 启动器共享同一组原创“间歇路线” path、颜色、深色背景和自适应安全区，Phone 另提供 Android 13 monochrome 层；单元测试跨模块比较 path，阻止两个入口再次漂移。具体来源、许可边界与资源清单见 [phone-ui-design.md](phone-ui-design.md)；Apple UI Kit、SF 字体、SF Symbols 与 Activity Rings 路径均不进入 APK 或仓库。
+`PhoneNavigationSpec` 固定“今天/训练/记录/恢复”和可访问名称；Compose `PhoneIcons` 与 Watch `Ui.Symbol` 分别提供平台内统一的原创 24×24/20×20 命令图标，不依赖 Unicode。Phone 与 Watch 启动器共享“间歇路线” path、颜色和自适应安全区，Phone 另提供 Android 13 monochrome 层；测试跨模块比较 path 并扫描旧 Unicode/halo/oval 控件。
 
 手机睡眠页采用 offline-first 投影。`PhoneSleepRepository` 把每次成功读取的最近 31 天 `record/session/stage` 合并进 SharedPreferences schema 1；传输失败、权限暂不可用或 ready 空列表都不删除既有记录，损坏/未来 schema 安全忽略。`PhoneSleepOverview` 只聚合系统实际提供的多 session 总时长、深睡、浅睡、REM、清醒、评分、血氧、心率和呼吸；`PhoneSleepTimeline`/`SleepStageTimelineView` 依据 stage 起止时间保留夜间清醒、session 空档与未知阶段，`PhoneSleepWeek`/`SleepWeekTrendView` 只从缓存生成近 7 晚总时长趋势。缺少完整阶段字段时显示文字空态，不补零、不猜测。`PhoneSleepSync` 以 7 天页读取 31 天窗口并在进程内 single-flight；前台睡眠页、手动全量同步和 `PhoneSleepSyncWorker` 共享同一次读取和同一缓存。完整健康明细保存在 `phone_sleep_cache.xml`，并同时从 legacy Auto Backup、Android 12+ cloud backup 和 device transfer 排除。
 
-手机计划页采用 library list -> plan detail -> editor 的单向层级。列表用于浏览，详情承担“设为手表当前”、编辑和经确认删除，编辑器只保存 Phone/Cloud 计划草稿；保存与切换当前计划不得互相隐式触发。`PhonePlanUiModel` 负责阶段标签、时间/距离安全切换和重复阶段压缩，Activity 重建保存编辑草稿和脏状态，返回时先确认放弃。动态阶段操作保持至少 48dp 触控目标并在 `contentDescription` 中携带阶段序号与当前值。
+Phone 第一目的地为“今天”，当前安排和训练控制优先；计划库按需进入后保持 library list -> detail -> editor 单向层级。详情承担设为当前、编辑和经确认删除，编辑器只保存草稿；保存与切换当前不得隐式互触发。`PhonePlanUiModel` 负责阶段标签、显式类型/单位选择、目标转换和重复阶段压缩，Activity 重建保存脏草稿，返回先确认放弃。
 
 Phone 0.24.0 的活动设置页只展示 Cloud V3 `/sync/v3/exchange` 与 Keystore device token。V2 root/recovery/approval 源码与旧 state 按迁移要求保留，但不再挂接 UI、调用或生成新 root；视觉文案不得把 V3 描述为应用层加密同步。
 
@@ -188,6 +188,10 @@ Watch 与 Phone manifest 均设置 `allowBackup=false`；Phone 的 Auto Backup /
 手机仍暂时广播 `_watchintervals-phone._tcp.`，供尚未卸载的 Windows Watch MCP 回滚使用；它将与 8766 listener、专用本地 token 在独立迁移清理批次一并删除，不再作为 Cloud MCP 验收前置。
 
 ### 手机 Cloud V3 同步
+
+Phone 的显式完整同步顺序固定为：验证 Watch 身份 → Cloud V3 exchange 拉取/应用 owner 权威计划库 → 将同一 Phone 快照写入独立 projection journal → Watch ACK → 睡眠与历史刷新。不得先把旧 Phone 库投影 Watch 再异步拉 Cloud，否则用户会短暂看到旧计划且 UI 无法声明三端一致。首次回填每个 exchange 最多 5 个 plan/workout/sleep item，最多 8 轮 drain；该上限用于约束生产 D1 的 WAN 往返时间，不改变总 outbox 持久性。
+
+计划身份层级为 groupId → planId → ordered stage。group/name 只用于显示，编辑和移动必须保留稳定 ID；删除 group 仅允许空组，删除 plan 只影响精确 planId。Phone、Watch 和 Cloud 都以完整 desired library 投影，entity tombstone 只用于 Cloud/同步审计，不能被误解释成清空整个库。
 
 Phone 0.24.0 的 canonical 路由为 Device Bearer Token 认证的 `POST /sync/v3/exchange`。请求严格包含 protocolVersion、requestId、deviceId、cursor、最多 25 项 planChanges/workoutFacts/sleepRecords、可选 liveStatus 和 commandResults；成功响应必须携带匹配 `^v3d\.[A-Za-z0-9_-]{8,64}$` 的 owner/library `revisionDomainId`。Worker 缺失或非法 domain 时 `/readyz` 与 exchange 均 fail closed；Phone 只有在本地尚未保存 cloud revision domain 时才兼容旧在途无字段响应，已绑定后缺字段也 fail closed。未知字段、路线、坐标、逐点心率和凭据字段在 Phone 组包与 Worker 入口两侧都 fail closed。业务正文不再做应用层 E2EE，HTTPS、Keystore token 包装、安全 BLE 与 OAuth 边界继续保留。
 

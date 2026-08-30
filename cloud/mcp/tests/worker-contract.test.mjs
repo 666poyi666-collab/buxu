@@ -870,6 +870,12 @@ test('Watch Worker + D1 canonical sync, auth, metadata and retirement contract',
       assert.ok((body.match(/watch:read/g) ?? []).length >= 10, body)
       assert.ok((body.match(/watch:write/g) ?? []).length >= 6, body)
       assert.ok((body.match(/watch:control/g) ?? []).length >= 5, body)
+      assert.match(body, /watch_get_plan/)
+      assert.match(body, /watch_move_plan/)
+      assert.match(body, /watch_replace_plan_stages/)
+      assert.match(body, /\"kind\"/)
+      assert.match(body, /\"unit\"/)
+      assert.match(body, /\"target\"/)
       assert.doesNotMatch(body, /ACCESS_KEY/)
     })
 
@@ -1333,6 +1339,69 @@ test('Watch Worker + D1 canonical sync, auth, metadata and retirement contract',
       ))
       assert.equal(writeResult.outcome, 'acknowledged')
       v3PlanRevision = writeResult.revision
+      const onePlan = mcpToolPayload(await callMcpTool(
+        worker.baseUrl, readToken, 'watch_get_plan', { planId: 'plan-cloud' },
+      ))
+      assert.equal(onePlan.plan.name, 'Cloud interval updated')
+      assert.equal(onePlan.plan.stages[0].target, 300)
+
+      const nonEmptyGroupDelete = mcpToolPayload(await callMcpTool(
+        worker.baseUrl, writeToken, 'watch_delete_plan_group', {
+          requestId: uuid(3340), operationId: uuid(3341),
+          expectedRevision: v3PlanRevision, groupId: 'group-cloud',
+        },
+      ))
+      assert.equal(nonEmptyGroupDelete.outcome, 'conflict')
+      assert.equal(nonEmptyGroupDelete.error, 'group_not_empty')
+
+      const newGroup = mcpToolPayload(await callMcpTool(
+        worker.baseUrl, writeToken, 'watch_upsert_plan_group', {
+          requestId: uuid(3342), operationId: uuid(3343),
+          expectedRevision: v3PlanRevision,
+          group: { id: 'group-week-two', name: 'Week two', sortOrder: 1 },
+        },
+      ))
+      assert.equal(newGroup.outcome, 'acknowledged')
+      v3PlanRevision = newGroup.revision
+
+      const replacedStages = mcpToolPayload(await callMcpTool(
+        worker.baseUrl, writeToken, 'watch_replace_plan_stages', {
+          requestId: uuid(3344), operationId: uuid(3345),
+          expectedRevision: v3PlanRevision, planId: 'plan-cloud',
+          stages: [
+            { kind: 'WALK', unit: 'TIME', target: 300 },
+            { kind: 'RUN', unit: 'TIME', target: 120 },
+            { kind: 'WALK', unit: 'TIME', target: 60 },
+          ],
+        },
+      ))
+      assert.equal(replacedStages.outcome, 'acknowledged')
+      v3PlanRevision = replacedStages.revision
+
+      const movedPlan = mcpToolPayload(await callMcpTool(
+        worker.baseUrl, writeToken, 'watch_move_plan', {
+          requestId: uuid(3346), operationId: uuid(3347),
+          expectedRevision: v3PlanRevision, planId: 'plan-cloud',
+          groupId: 'group-week-two', sortOrder: 0,
+        },
+      ))
+      assert.equal(movedPlan.outcome, 'acknowledged')
+      v3PlanRevision = movedPlan.revision
+
+      const changedPlan = mcpToolPayload(await callMcpTool(
+        worker.baseUrl, readToken, 'watch_get_plan', { planId: 'plan-cloud' },
+      ))
+      assert.equal(changedPlan.plan.groupId, 'group-week-two')
+      assert.deepEqual(changedPlan.plan.stages.map((stage) => stage.target), [300, 120, 60])
+
+      const missingPlanDelete = mcpToolPayload(await callMcpTool(
+        worker.baseUrl, writeToken, 'watch_delete_plan', {
+          requestId: uuid(3348), operationId: uuid(3349),
+          expectedRevision: v3PlanRevision, planId: 'missing-plan',
+        },
+      ))
+      assert.equal(missingPlanDelete.outcome, 'conflict')
+      assert.equal(missingPlanDelete.error, 'plan_not_found')
       const writeDeniedRead = mcpToolPayload(await callMcpTool(
         worker.baseUrl, writeToken, 'watch_list_plans',
       ))

@@ -2,7 +2,7 @@
 <resources>
     <style name="AppTheme" parent="@style/BaseAppTheme">
         <item name="android:forceDarkAllowed">false</item>
-        <item name="android:windowSplashScreenBackground">#F5F7FA</item>
+        <item name="android:windowSplashScreenBackground">#F4F5F7</item>
         <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
     </style>
 </resources>

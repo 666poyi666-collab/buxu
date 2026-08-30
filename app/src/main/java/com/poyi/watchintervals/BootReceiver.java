@@ -19,7 +19,8 @@ import android.os.SystemClock;
  */
 public class BootReceiver extends BroadcastReceiver {
     public static final String ACTION_WATCHDOG = "com.poyi.watchintervals.WATCHDOG";
-    private static final long WATCHDOG_INTERVAL_MILLIS = AlarmManager.INTERVAL_FIFTEEN_MINUTES;
+    /** Five minutes bounds API/BLE downtime after ColorOS reclaims the process. */
+    private static final long WATCHDOG_INTERVAL_MILLIS = 5 * 60_000L;
 
     @Override public void onReceive(Context context, Intent intent) {
         if (intent == null || !Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
@@ -28,11 +29,15 @@ public class BootReceiver extends BroadcastReceiver {
     }
 
     static void startServices(Context context) {
+        startService(context, WatchBridgeService.class, "watch_api");
+        startService(context, WatchLinkService.class, "ble_peripheral");
+    }
+
+    private static void startService(Context context, Class<?> service, String name) {
         try {
-            context.startForegroundService(new Intent(context, WatchBridgeService.class));
-            context.startForegroundService(new Intent(context, WatchLinkService.class));
+            context.startForegroundService(new Intent(context, service));
         } catch (Exception error) {
-            android.util.Log.w("BootReceiver", "service start deferred", error);
+            android.util.Log.w("BootReceiver", name + " start deferred", error);
         }
     }
 

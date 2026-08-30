@@ -9,17 +9,17 @@ import java.util.Comparator;
 import java.util.List;
 
 /** Validated chronological projection of the HealthKit sleep stage samples. */
-final class PhoneSleepTimeline {
-    static final int UNKNOWN = 0;
-    static final int DEEP = 1;
-    static final int LIGHT = 2;
-    static final int REM = 3;
-    static final int AWAKE = 4;
+public final class PhoneSleepTimeline {
+    public static final int UNKNOWN = 0;
+    public static final int DEEP = 1;
+    public static final int LIGHT = 2;
+    public static final int REM = 3;
+    public static final int AWAKE = 4;
 
-    final long startTime;
-    final long endTime;
-    final List<Segment> segments;
-    final int discardedStageCount;
+    public final long startTime;
+    public final long endTime;
+    public final List<Segment> segments;
+    public final int discardedStageCount;
 
     private PhoneSleepTimeline(long startTime, long endTime, List<Segment> segments,
             int discardedStageCount) {
@@ -29,7 +29,7 @@ final class PhoneSleepTimeline {
         this.discardedStageCount = discardedStageCount;
     }
 
-    static PhoneSleepTimeline from(JSONObject record) {
+    public static PhoneSleepTimeline from(JSONObject record) {
         ArrayList<Segment> values = new ArrayList<>();
         int discarded = 0;
         JSONArray sessions = record == null ? null : record.optJSONArray("sessions");
@@ -60,11 +60,11 @@ final class PhoneSleepTimeline {
         return new PhoneSleepTimeline(start, end, merged, discarded);
     }
 
-    boolean available() {
+    public boolean available() {
         return !segments.isEmpty() && endTime > startTime;
     }
 
-    long durationMinutes(int type) {
+    public long durationMinutes(int type) {
         long millis = 0L;
         for (Segment segment : segments) if (segment.type == type) {
             millis += Math.max(0L, segment.endTime - segment.startTime);
@@ -72,13 +72,13 @@ final class PhoneSleepTimeline {
         return Math.round(millis / 60_000d);
     }
 
-    int unknownCount() {
+    public int unknownCount() {
         int count = 0;
         for (Segment segment : segments) if (segment.type == UNKNOWN) count++;
         return count;
     }
 
-    static String typeName(int type, int rawType) {
+    public static String typeName(int type, int rawType) {
         if (type == DEEP) return "深睡";
         if (type == LIGHT) return "浅睡";
         if (type == REM) return "REM";
@@ -119,12 +119,12 @@ final class PhoneSleepTimeline {
         catch (Exception invalid) { return 0L; }
     }
 
-    static final class Segment {
-        final long startTime;
-        final long endTime;
-        final int type;
-        final int rawType;
-        final int sessionIndex;
+    public static final class Segment {
+        public final long startTime;
+        public final long endTime;
+        public final int type;
+        public final int rawType;
+        public final int sessionIndex;
 
         Segment(long startTime, long endTime, int type, int rawType, int sessionIndex) {
             this.startTime = startTime;

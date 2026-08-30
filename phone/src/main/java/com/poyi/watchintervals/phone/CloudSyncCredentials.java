@@ -24,7 +24,7 @@ import javax.crypto.spec.GCMParameterSpec;
  * AES key never live as plaintext SharedPreferences values and legacy /sync/push keys are
  * deliberately not migrated into the V2 device-token boundary.
  */
-final class CloudSyncCredentials {
+public final class CloudSyncCredentials {
     enum RevokedTokenResult { CLEARED, TOKEN_CHANGED, STORE_FAILED }
 
     @FunctionalInterface
@@ -32,8 +32,8 @@ final class CloudSyncCredentials {
         void run() throws Exception;
     }
 
-    static final class Config {
-        final String endpoint;
+    public static final class Config {
+        public final String endpoint;
         final String deviceToken;
 
         Config(String endpoint, String deviceToken) {
@@ -41,7 +41,7 @@ final class CloudSyncCredentials {
             this.deviceToken = deviceToken;
         }
 
-        boolean configured() {
+        public boolean configured() {
             return validEndpoint(endpoint) && validDeviceToken(deviceToken);
         }
 
@@ -70,7 +70,7 @@ final class CloudSyncCredentials {
 
     private CloudSyncCredentials() {}
 
-    static synchronized Config load(Context context) {
+    public static synchronized Config load(Context context) {
         SharedPreferences values = prefs(context);
         String endpoint = values.getString(ENDPOINT, "");
         String token = decrypt(values.getString(TOKEN_CIPHERTEXT, ""),
@@ -79,25 +79,35 @@ final class CloudSyncCredentials {
     }
 
     /** Runs response side effects under the same class monitor used by save/load. */
-    static synchronized boolean runIfCurrent(Context context, Config expected,
+    public static synchronized boolean runIfCurrent(Context context, Config expected,
                                              CurrentCredentialAction action) throws Exception {
         return runIfCurrent(expected, load(context), action);
     }
 
-    static synchronized boolean runIfCurrent(Config expected, Config current,
+    public static synchronized boolean runIfCurrent(Config expected, Config current,
                                              CurrentCredentialAction action) throws Exception {
         if (!sameCredential(expected, current)) return false;
         action.run();
         return true;
     }
 
-    static boolean sameCredential(Config first, Config second) {
+    public static boolean sameCredential(Config first, Config second) {
         return first != null && second != null
                 && first.endpoint.equals(second.endpoint)
                 && first.deviceToken.equals(second.deviceToken);
     }
 
-    static synchronized boolean save(Context context, String endpoint, String deviceToken) {
+    /**
+     * 只更新 endpoint,保留已安全保存的设备 token。
+     *
+     * 设备 token 由 Keystore 包装并与 endpoint 绑定;把它读回调用方再原样传回来既扩大了暴露面,
+     * 也没有必要。确实需要更换 token 时直接调用 {@link #save}。
+     */
+    public static synchronized boolean saveEndpointKeepingToken(Context context, String endpoint) {
+        return save(context, endpoint, load(context).deviceToken);
+    }
+
+    public static synchronized boolean save(Context context, String endpoint, String deviceToken) {
         String normalizedEndpoint = endpoint == null ? "" : endpoint.trim();
         String normalizedToken = deviceToken == null ? "" : deviceToken.trim();
         if (!validEndpoint(normalizedEndpoint) || !validDeviceToken(normalizedToken)) return false;
@@ -136,7 +146,7 @@ final class CloudSyncCredentials {
     }
 
     /** Returns existing local wrapping-key protected root material; never silently creates it. */
-    static synchronized byte[] rootKey(Context context, String deviceId) throws Exception {
+    public static synchronized byte[] rootKey(Context context, String deviceId) throws Exception {
         if (!validDeviceId(deviceId)) throw new IllegalArgumentException("invalid_device_id");
         SharedPreferences values = prefs(context);
         if (deviceId.equals(values.getString(ROOT_DEVICE_ID, ""))) {
@@ -155,7 +165,7 @@ final class CloudSyncCredentials {
         throw new IllegalStateException("root_key_missing");
     }
 
-    static synchronized boolean readyForSync(Context context) {
+    public static synchronized boolean readyForSync(Context context) {
         Config config = load(context);
         if (!config.configured()) return false;
         try {
@@ -167,12 +177,12 @@ final class CloudSyncCredentials {
     }
 
     /** V3 reuses the Keystore-wrapped device token but does not require the retired E2EE root. */
-    static synchronized boolean readyForCloudV3(Context context) {
+    public static synchronized boolean readyForCloudV3(Context context) {
         return load(context).configured();
     }
 
     /** Stops background retries after the server has revoked this device credential. */
-    static synchronized RevokedTokenResult clearRevokedDeviceToken(
+    public static synchronized RevokedTokenResult clearRevokedDeviceToken(
             Context context, String expectedToken) {
         Config current = load(context);
         if (!matchesExpectedToken(expectedToken, current.deviceToken)) {
@@ -184,12 +194,12 @@ final class CloudSyncCredentials {
         return cleared ? RevokedTokenResult.CLEARED : RevokedTokenResult.STORE_FAILED;
     }
 
-    static boolean matchesExpectedToken(String expectedToken, String currentToken) {
+    public static boolean matchesExpectedToken(String expectedToken, String currentToken) {
         return expectedToken != null && expectedToken.equals(currentToken);
     }
 
     /** Explicit first-device action. Existing roots are never overwritten by this method. */
-    static synchronized boolean initializeNewRoot(Context context) throws Exception {
+    public static synchronized boolean initializeNewRoot(Context context) throws Exception {
         Config config = load(context);
         if (!config.configured()) throw new IllegalStateException("sync_device_not_configured");
         try {
@@ -209,7 +219,7 @@ final class CloudSyncCredentials {
         return true;
     }
 
-    static synchronized String createRecoveryPackage(Context context, String recoveryKey)
+    public static synchronized String createRecoveryPackage(Context context, String recoveryKey)
             throws Exception {
         Config config = requireConfigured(context);
         byte[] root = rootKey(context, config.deviceId());
@@ -217,7 +227,7 @@ final class CloudSyncCredentials {
         finally { Arrays.fill(root, (byte) 0); }
     }
 
-    static synchronized void restoreRecoveryPackage(
+    public static synchronized void restoreRecoveryPackage(
             Context context, String encodedPackage, String recoveryKey)
             throws Exception {
         Config config = requireConfigured(context);
@@ -229,7 +239,7 @@ final class CloudSyncCredentials {
         finally { Arrays.fill(root, (byte) 0); }
     }
 
-    static synchronized String createDeviceApprovalRequest(Context context) throws Exception {
+    public static synchronized String createDeviceApprovalRequest(Context context) throws Exception {
         Config config = requireConfigured(context);
         String request = WatchSyncKeyPackages.createApprovalRequest(config.deviceId(),
                 transferKeyPair().getPublic(), System.currentTimeMillis());
@@ -241,7 +251,7 @@ final class CloudSyncCredentials {
         return request;
     }
 
-    static synchronized String approveDeviceRequest(Context context, String requestPackage)
+    public static synchronized String approveDeviceRequest(Context context, String requestPackage)
             throws Exception {
         Config config = requireConfigured(context);
         byte[] root = rootKey(context, config.deviceId());
@@ -251,7 +261,7 @@ final class CloudSyncCredentials {
         } finally { Arrays.fill(root, (byte) 0); }
     }
 
-    static synchronized void importDeviceApproval(Context context, String approvalPackage)
+    public static synchronized void importDeviceApproval(Context context, String approvalPackage)
             throws Exception {
         Config config = requireConfigured(context);
         WatchSyncKeyPackages.ApprovalBinding binding =
@@ -272,7 +282,7 @@ final class CloudSyncCredentials {
         finally { Arrays.fill(root, (byte) 0); }
     }
 
-    static synchronized void recordResult(Context context, long syncedAt, String error) {
+    public static synchronized void recordResult(Context context, long syncedAt, String error) {
         prefs(context).edit().putLong("last_synced_at", syncedAt)
                 .putString("last_error", error == null ? "" : error).apply();
     }

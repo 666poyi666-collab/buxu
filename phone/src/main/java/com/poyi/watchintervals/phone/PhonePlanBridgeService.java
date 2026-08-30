@@ -584,6 +584,7 @@ public class PhonePlanBridgeService extends Service {
         try { if (registration != null) getSystemService(NsdManager.class)
                 .unregisterService(registration); } catch (Exception ignored) {}
         workers.shutdownNow();
+        PhoneBootReceiver.schedule(this);
         super.onDestroy();
     }
     @Override public IBinder onBind(Intent intent) { return null; }

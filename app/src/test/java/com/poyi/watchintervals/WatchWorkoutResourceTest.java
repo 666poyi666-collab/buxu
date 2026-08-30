@@ -80,11 +80,128 @@ public class WatchWorkoutResourceTest {
         assertTrue(service.contains("FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP"));
         assertTrue(service.contains("TrainingActivity.EXTRA_PREPARED_SESSION"));
         assertTrue(service.contains("R.drawable.ic_workout_notification"));
+        assertTrue(service.contains("Intent.ACTION_SCREEN_OFF"));
+        assertTrue(service.contains("Intent.ACTION_SCREEN_ON"));
+        assertTrue(service.contains("screenWasOff"));
+        assertTrue(service.contains("registerScreenObserver()"));
+        assertTrue(service.contains("unregisterScreenObserver()"));
+        assertTrue(service.contains("restorePreparation ? WarmupActivity.class : TrainingActivity.class"));
+        assertTrue(service.contains("if (!running && !preparing) return;"));
+        assertTrue(service.contains("SURFACE_RESTORE_THROTTLE_MILLIS"));
+        assertTrue(manifest.contains("android.permission.USE_FULL_SCREEN_INTENT"));
+        assertTrue(manifest.contains("android.permission.SYSTEM_ALERT_WINDOW"));
+        assertTrue(service.contains("setFullScreenIntent(surface, true)"));
+        assertTrue(service.contains("setTimeoutAfter(5_000L)"));
+        assertTrue(service.contains("Settings.canDrawOverlays(this)"));
+        assertTrue(service.contains("WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY"));
+        assertTrue(service.contains("onWorkoutSurfaceVisible()"));
+        assertTrue(training.contains("service.onWorkoutSurfaceVisible()"));
+        assertTrue(service.contains("PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE"));
         assertFalse(service.contains("keepTrainingTaskForeground"));
         assertFalse(service.contains("ActivityManager"));
         assertTrue(training.contains("panel.setClickable(false)"));
         assertTrue(training.contains("panel.setFocusable(false)"));
         assertTrue(training.contains("transientCueTracker.reset()"));
+        assertFalse(training.contains("FLAG_KEEP_SCREEN_ON"));
+        assertTrue(training.contains("workoutPager.addView(dataPage)"));
+        assertTrue(training.contains("workoutPager.setCurrentItem(STAGE_PAGE, false)"));
+    }
+
+    @Test public void countdownPageKeepsCoreLiveMetricsInTheSameViewport() throws Exception {
+        Path root = repositoryRoot();
+        String training = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/TrainingActivity.java"));
+
+        assertTrue(training.contains("stageHeart = Ui.metricCell"));
+        assertTrue(training.contains("stageDistance = Ui.metricCell"));
+        assertTrue(training.contains("stageCalories = Ui.metricCell"));
+        assertTrue(training.contains("coreRemaining = Ui.metricCell"));
+        assertTrue(training.contains("Ui.setTextIfChanged(coreRemaining, compactRemainingText(s))"));
+        assertTrue(training.contains("String.format(Locale.CHINA, \"%.2f\", Math.max(0d, s.totalMeters) / 1000d)"));
+        assertTrue(training.contains("Ui.setTextIfChanged(stageCalories, String.valueOf(s.live.calories))"));
+    }
+
+    @Test public void largeWatchPlanLibrariesOpenGroupFirstInsteadOfOneFlatList()
+            throws Exception {
+        String plan = read(repositoryRoot().resolve(
+                "app/src/main/java/com/poyi/watchintervals/PlanActivity.java"));
+        assertTrue(plan.contains("renderGroupIndex(content)"));
+        assertTrue(plan.contains("buildGroupPage(openGroupId)"));
+        assertTrue(plan.contains("private View groupCard("));
+        assertTrue(plan.contains("先选择分组，再选择当天安排"));
+        assertTrue(plan.contains("返回当前分组"));
+        assertTrue(plan.contains("if (!openGroupId.isEmpty())"));
+    }
+
+    @Test public void stageVoiceCuesStayDynamicOfflineAndUserConfigurable() throws Exception {
+        Path root = repositoryRoot();
+        String service = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/WorkoutService.java"));
+        String speaker = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/WorkoutVoiceSpeaker.java"));
+        String settings = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/VoiceCueSettingsActivity.java"));
+        String policy = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/WorkoutVoiceCuePolicy.java"));
+        String main = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/MainActivity.java"));
+        String manifest = read(root.resolve("app/src/main/AndroidManifest.xml"));
+
+        assertTrue(service.contains("maybeAnnounceUpcomingStage()"));
+        assertTrue(service.contains("WorkoutVoiceCuePolicy.stageAnnouncement("));
+        assertTrue(service.contains("WorkoutVoiceCuePolicy.completionAnnouncement()"));
+        assertTrue(speaker.contains("new TextToSpeech(context"));
+        assertTrue(speaker.contains("Locale.SIMPLIFIED_CHINESE"));
+        assertTrue(speaker.contains("USAGE_ASSISTANCE_NAVIGATION_GUIDANCE"));
+        assertTrue(policy.contains("CLEAR("));
+        assertTrue(policy.contains("CALM("));
+        assertTrue(policy.contains("ENERGETIC("));
+        assertTrue(settings.contains("试听下一阶段"));
+        assertTrue(main.contains("VoiceCueSettingsActivity.class"));
+        assertTrue(main.contains("Settings.ACTION_MANAGE_OVERLAY_PERMISSION"));
+        assertTrue(manifest.contains(".VoiceCueSettingsActivity"));
+        assertTrue(manifest.contains("android.intent.action.TTS_SERVICE"));
+    }
+
+    @Test public void optionalSensorDenialDoesNotRepeatTheRuntimePermissionDialog() throws Exception {
+        String main = read(repositoryRoot().resolve(
+                "app/src/main/java/com/poyi/watchintervals/MainActivity.java"));
+
+        assertTrue(main.contains("授权并开始训练"));
+        assertTrue(main.contains("requestBackgroundLocationOrStart()"));
+        assertTrue(main.contains("if (requestCode == REQUEST_PERMISSIONS)"));
+        assertFalse(main.contains("PackageManager.PERMISSION_GRANTED)) requestAndStart()"));
+    }
+
+    @Test public void watchServicesRecoverIndependentlyAfterProcessReclaim() throws Exception {
+        Path root = repositoryRoot();
+        String boot = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/BootReceiver.java"));
+        String bridge = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/WatchBridgeService.java"));
+        String link = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/WatchLinkService.java"));
+        String main = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/MainActivity.java"));
+
+        assertTrue(boot.contains("startService(context, WatchBridgeService.class"));
+        assertTrue(boot.contains("startService(context, WatchLinkService.class"));
+        assertTrue(boot.contains("WATCHDOG_INTERVAL_MILLIS = 5 * 60_000L"));
+        assertTrue(bridge.contains("BootReceiver.schedule(this)"));
+        assertTrue(link.contains("BootReceiver.schedule(this)"));
+        assertTrue(main.contains("start = Ui.iconAction(this, \"开始训练\""));
+    }
+
+    @Test public void watchAdbKeepaliveRedialsAnOfflineNetworkEndpoint() throws Exception {
+        String script = read(repositoryRoot().resolve("tools/watch-link.ps1"));
+
+        assertTrue(script.contains("(device|offline)"));
+        assertTrue(script.contains("State     = $state"));
+        assertTrue(script.contains("$offlineWatch = $devices"));
+        assertTrue(script.contains("Invoke-Adb @('disconnect', $offlineWatch.Serial)"));
+        assertTrue(script.contains("Get-RememberedEndpoint"));
+        assertTrue(script.contains("Save-RememberedEndpoint -Endpoint $endpoint"));
+        assertTrue(script.contains("getprop ro.product.model"));
     }
 
     @Test public void pagerAndCompactActionsKeepTheirAccessibilityContracts() throws Exception {
@@ -106,6 +223,67 @@ public class WatchWorkoutResourceTest {
         assertTrue(ui.contains("Math.max(getMeasuredWidth(), minimumTarget)"));
         assertTrue(ui.contains("Math.max(getMeasuredHeight(), minimumTarget)"));
         assertTrue(ui.contains("getConfiguration().fontScale"));
+    }
+
+    @Test public void watchVisualLanguageStaysCompactAndDoesNotRestoreTheGlowHalo() throws Exception {
+        Path root = repositoryRoot();
+        String tokens = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/WatchTokens.java"));
+        String ui = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/Ui.java"));
+        String main = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/MainActivity.java"));
+        String warmup = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/WarmupActivity.java"));
+        String training = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/TrainingActivity.java"));
+
+        assertTrue(tokens.contains("RADIUS_CARD = 10f"));
+        assertTrue(tokens.contains("RADIUS_CHIP = 7f"));
+        assertTrue(tokens.contains("ACTION_PRIMARY = 54f"));
+        assertTrue(tokens.contains("ACTION_SECONDARY = 40f"));
+        assertTrue(tokens.contains("ACTION_CONTROL = 54f"));
+        assertTrue(tokens.contains("LIST_ROW = 60f"));
+        assertFalse(ui.contains("private final Paint halo"));
+        assertFalse(ui.contains("scale * .48f, halo"));
+        assertTrue(main.contains("activityTitle = Ui.bold(this, \"步序\""));
+        assertTrue(main.contains("overviewCell(\"本次\", planSummary)"));
+        assertTrue(main.contains("overviewCell(\"本周\", weeklyLine)"));
+        assertTrue(main.contains("Ui.iconAction(this, \"更换计划\""));
+        assertTrue(main.contains("stageStrip = Ui.stageStrip(this)"));
+        assertTrue(main.contains("header.addView(Ui.workoutGlyph(this, Ui.BRAND)"));
+        assertTrue(main.contains("planCard.setContentDescription(\"当前训练计划，点击更换\")"));
+        assertTrue(main.contains("planCard.setOnClickListener"));
+        assertTrue(ui.contains("static final class StageStrip extends View"));
+        assertTrue(ui.contains("enum Symbol { PLAY, PAUSE, STOP, LIST, BACK, FORWARD, DELETE, CHECK, HISTORY, SOUND }"));
+        assertFalse(ui.contains("static View glow"));
+        assertFalse(ui.contains("ovalAction("));
+        assertTrue(warmup.contains("Ui.iconAction(this, \"开始训练\""));
+        assertFalse(warmup.contains("Ui.glow"));
+        assertTrue(training.contains("Ui.iconAction(this, \"暂停训练\""));
+        assertTrue(training.contains("Ui.iconAction(this, \"结束训练\""));
+        assertFalse(training.contains("roundControl("));
+        String policy = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/WorkoutPreparationPolicy.java"));
+        String serviceSource = read(root.resolve(
+                "app/src/main/java/com/poyi/watchintervals/WorkoutService.java"));
+        assertTrue(policy.contains("COUNTDOWN_MILLIS = 3_000L"));
+        assertTrue(serviceSource.contains("startPreparationCountdown()"));
+        assertTrue(serviceSource.contains("preparationCountdownEndsElapsed"));
+        assertTrue(serviceSource.contains("locationIntervalMillis(\n                    running, paused, hasLiveGpsFix())"));
+        assertTrue(serviceSource.contains("requestSingleFixCandidates()"));
+        assertTrue(serviceSource.contains("expireSingleFixRequests(now)"));
+        assertTrue(serviceSource.contains("if (currentLocationSignal == request) currentLocationSignal = null"));
+        assertTrue(serviceSource.contains("hasLiveGpsFix()"));
+        assertTrue(serviceSource.contains("requestedLocationIntervalMillis == interval"));
+        assertTrue(serviceSource.contains("preparing || (running && !paused)"));
+        assertTrue(serviceSource.contains("cancelSingleFixRequests()"));
+        assertTrue(serviceSource.contains("clockHandler.postDelayed(this, 1_000L)"));
+        assertTrue(serviceSource.contains("if (wakeLock != null && wakeLock.isHeld()) wakeLock.release()"));
+        assertFalse(warmup.contains("FLAG_KEEP_SCREEN_ON"));
+        assertTrue(warmup.contains("service.startPreparationCountdown()"));
+        assertTrue(warmup.contains("preparationCountdownRemainingMs()"));
+        assertFalse(warmup.contains("postDelayed(countdownTick, 850L)"));
     }
 
     private static String activityDeclaration(String manifest, String activityName) {

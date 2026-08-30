@@ -9,10 +9,10 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
-import android.view.WindowManager;
 import android.widget.LinearLayout;
 import android.widget.FrameLayout;
 import android.widget.TextView;
@@ -24,9 +24,12 @@ public class WarmupActivity extends Activity {
     private WorkoutService service;
     private boolean bound;
     private boolean countingDown;
+    private boolean trainingOpened;
     private int countdownValue;
+    private int lastRenderedCountdown;
     private TextView countdownOverlay;
     private TextView gpsStatus, sourceSummary, startButton, systemValue, gpsValue, stepsValue, heartValue, directStart, warmupClock;
+    private Ui.Ring gpsRing;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final java.text.SimpleDateFormat clockFormat =
             new java.text.SimpleDateFormat("HH:mm", java.util.Locale.CHINA);
@@ -36,13 +39,13 @@ public class WarmupActivity extends Activity {
             handler.postDelayed(this, 500L);
         }
     };
-    /** Named callback so leaving the preparation screen can cancel the final GO hand-off too. */
-    private final Runnable beginWorkoutAfterCountdown = this::beginWorkout;
     private final ServiceConnection connection = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName name, IBinder binder) {
             service = ((WorkoutService.LocalBinder) binder).service();
             bound = true;
+            service.onWorkoutSurfaceVisible();
             refreshUi();
+            resumeCountdownUiIfNeeded();
         }
 
         @Override public void onServiceDisconnected(ComponentName name) {
@@ -53,7 +56,6 @@ public class WarmupActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         plan = getIntent().getStringExtra("plan");
         stages = PlanStore.decode(plan);
         if (stages.isEmpty() && PlanStore.isExplicitlyEmpty(this)) {
@@ -72,14 +74,14 @@ public class WarmupActivity extends Activity {
         super.onStart();
         bound = bindService(new Intent(this, WorkoutService.class), connection, Context.BIND_AUTO_CREATE);
         handler.post(refresh);
+        if (countingDown) handler.post(countdownTick);
     }
 
     @Override protected void onStop() {
         handler.removeCallbacks(refresh);
-        // A countdown is only meaningful while this screen is visible. Letting delayed callbacks
-        // survive Home/recents left the overlay on GO with service == null, permanently blocking
-        // another start attempt when the user returned.
-        cancelCountdown();
+        // The service owns the deadline. Leaving the Activity pauses only the visual overlay;
+        // the hand-off continues once and the screen observer brings TrainingActivity back.
+        pauseCountdownUi();
         if (bound) {
             unbindService(connection);
             bound = false;
@@ -96,14 +98,14 @@ public class WarmupActivity extends Activity {
 
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(Ui.workoutGlyph(this, Ui.LIME),
-                new LinearLayout.LayoutParams(Ui.dp(this, 38), Ui.dp(this, 38)));
+        header.addView(Ui.workoutGlyph(this, Ui.BRAND),
+                new LinearLayout.LayoutParams(Ui.dp(this, Ui.HEADER_ICON), Ui.dp(this, Ui.HEADER_ICON)));
         LinearLayout identity = new LinearLayout(this);
         identity.setOrientation(LinearLayout.VERTICAL);
         TextView stageTitle = Ui.bold(this, PlanStore.name(this), 17, Ui.WHITE);
         identity.addView(stageTitle, new LinearLayout.LayoutParams(-1, Ui.dp(this, 23)));
-        gpsStatus = Ui.bold(this, "GPS 准备中", Ui.CAPTION, Ui.AMBER);
-        identity.addView(gpsStatus, new LinearLayout.LayoutParams(-1, Ui.dp(this, 15)));
+        TextView preparationLabel = Ui.bold(this, "运动准备 · 可随时开始", Ui.CAPTION, Ui.MUTED);
+        identity.addView(preparationLabel, new LinearLayout.LayoutParams(-1, Ui.dp(this, 15)));
         LinearLayout.LayoutParams identityParams = new LinearLayout.LayoutParams(0, Ui.dp(this, 40), 1);
         identityParams.leftMargin = Ui.dp(this, 9);
         header.addView(identity, identityParams);
@@ -113,35 +115,47 @@ public class WarmupActivity extends Activity {
         header.addView(warmupClock, new LinearLayout.LayoutParams(Ui.dp(this, 62), Ui.dp(this, 40)));
         root.addView(header, new LinearLayout.LayoutParams(-1, Ui.dp(this, 42)));
 
+        FrameLayout acquisition = new FrameLayout(this);
+        gpsRing = new Ui.Ring(this);
+        acquisition.addView(gpsRing, new FrameLayout.LayoutParams(
+                Ui.dp(this, 96), Ui.dp(this, 96), Gravity.CENTER));
+        LinearLayout acquisitionText = new LinearLayout(this);
+        acquisitionText.setOrientation(LinearLayout.VERTICAL);
+        acquisitionText.setGravity(Gravity.CENTER);
+        gpsValue = Ui.bold(this, "正在搜星", 22, Ui.WHITE);
+        gpsValue.setGravity(Gravity.CENTER);
+        acquisitionText.addView(gpsValue, new LinearLayout.LayoutParams(
+                Ui.dp(this, 92), Ui.dp(this, 30)));
+        gpsStatus = Ui.text(this, "GPS 准备中", Ui.LABEL, Ui.AMBER);
+        gpsStatus.setGravity(Gravity.CENTER);
+        acquisitionText.addView(gpsStatus, new LinearLayout.LayoutParams(
+                Ui.dp(this, 94), Ui.dp(this, 20)));
+        acquisition.addView(acquisitionText,
+                new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        root.addView(acquisition, new LinearLayout.LayoutParams(-1, Ui.dp(this, 104)));
+
         sourceSummary = Ui.text(this, "正在检测记录来源", Ui.LABEL, Ui.MUTED);
         sourceSummary.setGravity(Gravity.CENTER);
-        root.addView(sourceSummary, new LinearLayout.LayoutParams(-1, Ui.dp(this, 22)));
-
-        android.widget.FrameLayout startBox = new android.widget.FrameLayout(this);
-        startBox.addView(Ui.glow(this, Ui.LIME, 72),
-                new android.widget.FrameLayout.LayoutParams(Ui.dp(this, 132), Ui.dp(this, 132), Gravity.CENTER));
-        startButton = Ui.bold(this, "开始", 25, Ui.BLACK);
-        startButton.setGravity(Gravity.CENTER);
-        startButton.setBackground(Ui.gradientOvalAction(this, Ui.LIME, Ui.GREEN));
-        Ui.pressable(startButton);
-        startBox.addView(startButton,
-                new android.widget.FrameLayout.LayoutParams(Ui.dp(this, 98), Ui.dp(this, 98), Gravity.CENTER));
-        root.addView(startBox, new LinearLayout.LayoutParams(-1, Ui.dp(this, 126)));
+        root.addView(sourceSummary, new LinearLayout.LayoutParams(-1, Ui.dp(this, 20)));
 
         LinearLayout readiness = new LinearLayout(this);
         readiness.setGravity(Gravity.CENTER);
         systemValue = readinessCell(readiness, "记录");
-        gpsValue = readinessCell(readiness, "定位");
         stepsValue = readinessCell(readiness, "步数");
         heartValue = readinessCell(readiness, "心率");
-        root.addView(readiness, new LinearLayout.LayoutParams(-1, Ui.dp(this, 54)));
+        root.addView(readiness, new LinearLayout.LayoutParams(-1, Ui.dp(this, 48)));
         root.addView(new TextView(this), new LinearLayout.LayoutParams(-1, 0, 1));
 
         directStart = Ui.text(this, "定位未完成也可开始，运动后自动补充轨迹", 11, Ui.MUTED);
         directStart.setGravity(Gravity.CENTER);
         root.addView(directStart, new LinearLayout.LayoutParams(-1, Ui.dp(this, 22)));
-        TextView back = Ui.action(this, "训练设置", 16, Ui.WHITE, Ui.PANEL);
-        LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 40));
+        startButton = Ui.iconAction(this, "开始训练", 18, Ui.BLACK, Ui.LIME, Ui.Symbol.PLAY);
+        LinearLayout.LayoutParams startParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.ACTION_PRIMARY));
+        startParams.topMargin = Ui.dp(this, 6);
+        startParams.bottomMargin = Ui.dp(this, 6);
+        root.addView(startButton, startParams);
+        TextView back = Ui.iconAction(this, "取消准备", 16, Ui.WHITE, Ui.PANEL, Ui.Symbol.BACK);
+        LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.ACTION_SECONDARY));
         backParams.topMargin = Ui.dp(this, 4);
         root.addView(back, backParams);
 
@@ -218,38 +232,48 @@ public class WarmupActivity extends Activity {
         String value;
         int statusColor;
         int valueColor;
+        float progress;
         if (s.systemGpsLocated) {
-            String signal = s.systemGpsSnr > 0 ? " " + Ui.systemGpsSignal(s.systemGpsSnr) : "";
-            status = "● 系统定位完成" + signal; statusColor = Ui.LIME;
-            value = "已定位"; valueColor = Ui.WHITE;
+            String signal = s.systemGpsSnr > 0 ? Ui.systemGpsSignal(s.systemGpsSnr) : "信号已锁定";
+            status = signal; statusColor = Ui.LIME;
+            value = "已定位"; valueColor = Ui.WHITE; progress = 1f;
         } else if (s.systemGpsAvailable && s.systemGpsSnr > 0) {
-            status = "● 系统定位 " + Ui.systemGpsSignal(s.systemGpsSnr); statusColor = Ui.AMBER;
-            value = "搜星 " + Ui.systemGpsSignal(s.systemGpsSnr); valueColor = Ui.AMBER;
+            status = "系统 GPS · " + Ui.systemGpsSignal(s.systemGpsSnr); statusColor = Ui.AMBER;
+            value = "正在搜星"; valueColor = Ui.WHITE;
+            progress = Math.min(.85f, Math.max(.2f, s.systemGpsSnr / 35f));
         } else if (!s.gpsPermissionGranted) {
-            status = "● GPS 未授权"; statusColor = Ui.RED;
-            value = "未授权"; valueColor = Ui.RED;
+            status = "需要定位权限"; statusColor = Ui.RED;
+            value = "未授权"; valueColor = Ui.RED; progress = 0f;
         } else if (!s.gpsProviderEnabled) {
-            status = "● 定位已关闭"; statusColor = Ui.RED;
-            value = "已关闭"; valueColor = Ui.RED;
+            status = "请打开系统定位"; statusColor = Ui.RED;
+            value = "定位关闭"; valueColor = Ui.RED; progress = 0f;
         } else if (s.hasGpsFix && s.gpsFixFromCache) {
-            status = "● GPS 缓存 ±" + Math.round(s.gpsAccuracyMeters) + "m"; statusColor = Ui.AMBER;
-            value = "等待实时"; valueColor = Ui.AMBER;
+            status = "上次位置 ±" + Math.round(s.gpsAccuracyMeters) + "m"; statusColor = Ui.AMBER;
+            value = "正在校准"; valueColor = Ui.WHITE; progress = .55f;
         } else if (s.hasGpsFix) {
-            status = "● GPS ±" + Math.round(s.gpsAccuracyMeters) + "m"; statusColor = Ui.LIME;
-            value = "已定位"; valueColor = Ui.WHITE;
+            status = "精度 ±" + Math.round(s.gpsAccuracyMeters) + "m"; statusColor = Ui.LIME;
+            value = "已定位"; valueColor = Ui.WHITE; progress = 1f;
         } else if (s.gpsAccuracyMeters > 0) {
-            status = "● GPS ±" + Math.round(s.gpsAccuracyMeters) + "m"; statusColor = Ui.AMBER;
-            value = "校准中"; valueColor = Ui.AMBER;
+            status = "当前 ±" + Math.round(s.gpsAccuracyMeters) + "m"; statusColor = Ui.AMBER;
+            value = "正在校准"; valueColor = Ui.WHITE; progress = .7f;
         } else if (s.gpsSatelliteCount > 0) {
-            String count = s.gpsSatellitesUsed > 0 ? s.gpsSatellitesUsed + "/" + s.gpsSatelliteCount : "搜星 " + s.gpsSatelliteCount;
-            status = "● GPS " + count; statusColor = Ui.AMBER;
-            value = "搜星中"; valueColor = Ui.AMBER;
+            String count = s.gpsSatellitesUsed > 0
+                    ? s.gpsSatellitesUsed + "/" + s.gpsSatelliteCount + " 颗可用"
+                    : "发现 " + s.gpsSatelliteCount + " 颗卫星";
+            status = count; statusColor = Ui.AMBER;
+            value = "正在搜星"; valueColor = Ui.WHITE;
+            progress = Math.min(.85f, Math.max(.12f, s.gpsSatelliteCount / 12f));
         } else {
-            status = s.systemGpsAvailable ? "● 系统定位搜星中" : "● 轨迹定位中";
-            statusColor = Ui.AMBER; value = "可开始"; valueColor = Ui.WHITE;
+            status = s.systemGpsAvailable ? "系统 GPS 正在工作" : "等待首个定位信号";
+            statusColor = Ui.AMBER; value = "正在搜星"; valueColor = Ui.WHITE;
+            progress = .08f;
         }
         Ui.setTextAndColorIfChanged(gpsStatus, status, statusColor);
         Ui.setTextAndColorIfChanged(gpsValue, value, valueColor);
+        gpsRing.set(progress, statusColor);
+        Ui.setTextIfChanged(directStart, progress >= 1f
+                ? "定位已就绪，开始后立即记录轨迹"
+                : "可立即开始，移动后会自动校准轨迹");
     }
 
     private void updateHeart(WorkoutService.Snapshot s) {
@@ -275,24 +299,36 @@ public class WarmupActivity extends Activity {
 
     private void beginCountdown() {
         if (countingDown || service == null) return;
+        if (!service.startPreparationCountdown()) return;
         countingDown = true;
-        countdownValue = 3;
-        // The successful button release already supplied the confirmation tick. Keep the first
-        // numeral visual-only, then pulse once for each subsequent beat.
-        showCountdownFrame(String.valueOf(countdownValue), false);
-        handler.postDelayed(countdownTick, 850L);
+        startButton.setEnabled(false);
+        countdownValue = 0;
+        lastRenderedCountdown = 0;
+        handler.removeCallbacks(countdownTick);
+        handler.post(countdownTick);
     }
 
     private final Runnable countdownTick = new Runnable() {
         @Override public void run() {
-            countdownValue--;
-            if (countdownValue > 0) {
-                showCountdownFrame(String.valueOf(countdownValue));
-                handler.postDelayed(this, 850L);
-            } else {
+            if (!countingDown || service == null) return;
+            long remaining = service.preparationCountdownRemainingMs();
+            long now = SystemClock.elapsedRealtime();
+            int frame = WorkoutPreparationPolicy.countdownFrame(now + remaining, now);
+            if (frame == 0) {
                 showCountdownFrame("GO");
-                handler.postDelayed(beginWorkoutAfterCountdown, 350L);
+                countingDown = false;
+                handler.postDelayed(() -> {
+                    hideCountdownOverlay();
+                    openTrainingIfStarted();
+                }, 250L);
+                return;
             }
+            countdownValue = frame;
+            if (lastRenderedCountdown != frame) {
+                lastRenderedCountdown = frame;
+                showCountdownFrame(String.valueOf(frame));
+            }
+            handler.postDelayed(this, 50L);
         }
     };
 
@@ -306,17 +342,6 @@ public class WarmupActivity extends Activity {
         if (haptic) countdownOverlay.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
     }
 
-    private void beginWorkout() {
-        if (service == null || !service.beginWorkout()) {
-            cancelCountdown();
-            return;
-        }
-        startActivity(new Intent(this, TrainingActivity.class)
-                .putExtra("plan", plan)
-                .putExtra(TrainingActivity.EXTRA_PREPARED_SESSION, true));
-        finish();
-    }
-
     private void cancelAndFinish() {
         cancelCountdown();
         cancelPreparation();
@@ -325,15 +350,53 @@ public class WarmupActivity extends Activity {
 
     private void cancelCountdown() {
         handler.removeCallbacks(countdownTick);
-        handler.removeCallbacks(beginWorkoutAfterCountdown);
-        countingDown = false;
-        countdownValue = 0;
+        if (service != null) service.cancelPreparationCountdown();
+        pauseCountdownUi();
+    }
+
+    private void pauseCountdownUi() {
+        handler.removeCallbacks(countdownTick);
         if (countdownOverlay == null) return;
         countdownOverlay.animate().cancel();
         countdownOverlay.setAlpha(1f);
         countdownOverlay.setScaleX(1f);
         countdownOverlay.setScaleY(1f);
         countdownOverlay.setVisibility(View.GONE);
+    }
+
+    private void resumeCountdownUiIfNeeded() {
+        if (service == null) return;
+        if (!service.snapshot(false).preparing) {
+            openTrainingIfStarted();
+            return;
+        }
+        if (service.preparationCountdownRemainingMs() <= 0L) return;
+        countingDown = true;
+        startButton.setEnabled(false);
+        lastRenderedCountdown = 0;
+        handler.removeCallbacks(countdownTick);
+        handler.post(countdownTick);
+    }
+
+    private void hideCountdownOverlay() {
+        if (countdownOverlay == null) return;
+        countdownOverlay.setVisibility(View.GONE);
+        countdownValue = 0;
+        lastRenderedCountdown = 0;
+        countdownOverlay.animate().cancel();
+        countdownOverlay.setAlpha(1f);
+        countdownOverlay.setScaleX(1f);
+        countdownOverlay.setScaleY(1f);
+        countdownOverlay.setVisibility(View.GONE);
+    }
+
+    private void openTrainingIfStarted() {
+        if (trainingOpened || service == null || service.snapshot(false).preparing) return;
+        trainingOpened = true;
+        startActivity(new Intent(this, TrainingActivity.class)
+                .putExtra("plan", plan)
+                .putExtra(TrainingActivity.EXTRA_PREPARED_SESSION, true));
+        finish();
     }
 
     private void cancelPreparation() {

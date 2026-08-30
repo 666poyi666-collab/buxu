@@ -7,10 +7,12 @@ import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
 import android.location.LocationManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
@@ -27,9 +29,12 @@ public class MainActivity extends Activity {
     private static final int REQUEST_PERMISSIONS = 10;
     private static final int REQUEST_BACKGROUND_LOCATION = 11;
     private static final int REQUEST_SLEEP_PERMISSION = 12;
+    private static final int REQUEST_WORKOUT_OVERLAY = 13;
     private ArrayList<Stage> stages;
-    private TextView ready, workout, start, planLine, planSummary, planDetails, sensorStatus, clock, activityTitle;
+    private TextView ready, workout, start, planLine, planSummary, planDetails, sensorStatus,
+            clock, activityTitle, activityType;
     private TextView weeklyLine;
+    private Ui.StageStrip stageStrip;
     private LinearLayout pagerHistoryList, pagerPlanList;
     private TextView pagerHistorySummary, pagerPlanTitle;
     private boolean routingToTraining;
@@ -124,14 +129,14 @@ public class MainActivity extends Activity {
         // Compact workout identity, matching the shared interval-route mark + title + clock.
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(Ui.workoutGlyph(this, Ui.LIME),
-                new LinearLayout.LayoutParams(Ui.dp(this, 38), Ui.dp(this, 38)));
+        header.addView(Ui.workoutGlyph(this, Ui.BRAND),
+                new LinearLayout.LayoutParams(Ui.dp(this, Ui.HEADER_ICON), Ui.dp(this, Ui.HEADER_ICON)));
         LinearLayout identity = new LinearLayout(this);
         identity.setOrientation(LinearLayout.VERTICAL);
-        activityTitle = Ui.bold(this, "户外训练", 18, Ui.WHITE);
+        activityTitle = Ui.bold(this, "步序", 18, Ui.WHITE);
         identity.addView(activityTitle, new LinearLayout.LayoutParams(-1, Ui.dp(this, 23)));
-        TextView brand = Ui.text(this, "步序 · 间歇训练", Ui.CAPTION, Ui.MUTED);
-        identity.addView(brand, new LinearLayout.LayoutParams(-1, Ui.dp(this, 15)));
+        activityType = Ui.text(this, "户外训练 · 间歇训练", Ui.CAPTION, Ui.MUTED);
+        identity.addView(activityType, new LinearLayout.LayoutParams(-1, Ui.dp(this, 15)));
         LinearLayout.LayoutParams identityParams = new LinearLayout.LayoutParams(0, Ui.dp(this, 40), 1);
         identityParams.leftMargin = Ui.dp(this, 9);
         header.addView(identity, identityParams);
@@ -140,45 +145,54 @@ public class MainActivity extends Activity {
         header.addView(clock, new LinearLayout.LayoutParams(Ui.dp(this, 62), Ui.dp(this, 40)));
         root.addView(header, new LinearLayout.LayoutParams(-1, Ui.dp(this, 42)));
 
-        ready = Ui.bold(this, "训练安排已就绪", Ui.LABEL, Ui.LIME);
-        LinearLayout.LayoutParams readyParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 20));
-        readyParams.topMargin = Ui.dp(this, 3);
-        root.addView(ready, readyParams);
+        LinearLayout planCard = new LinearLayout(this);
+        planCard.setOrientation(LinearLayout.VERTICAL);
+        planCard.setPadding(Ui.dp(this, 12), Ui.dp(this, 6), Ui.dp(this, 12), Ui.dp(this, 6));
+        planCard.setBackground(Ui.background(this, Ui.PANEL, Ui.RADIUS_CARD));
+        planCard.setContentDescription("当前训练计划，点击更换");
+        planCard.setOnClickListener(v -> startActivity(new Intent(this, PlanActivity.class)));
+        Ui.pressable(planCard);
+        ready = Ui.bold(this, "今日安排", Ui.LABEL, Ui.LIME);
+        planCard.addView(ready, new LinearLayout.LayoutParams(-1, Ui.dp(this, 18)));
         workout = Ui.bold(this, "1千米 + 200米", 27, Ui.WHITE);
-        root.addView(workout, new LinearLayout.LayoutParams(-1, Ui.dp(this, 34)));
+        planCard.addView(workout, new LinearLayout.LayoutParams(-1, Ui.dp(this, 32)));
         planLine = Ui.text(this, "", Ui.BODY, Ui.MUTED);
-        root.addView(planLine, new LinearLayout.LayoutParams(-1, Ui.dp(this, 20)));
-        planSummary = Ui.text(this, "", Ui.CAPTION, Ui.MUTED);
-        root.addView(planSummary, new LinearLayout.LayoutParams(-1, Ui.dp(this, 16)));
+        planCard.addView(planLine, new LinearLayout.LayoutParams(-1, Ui.dp(this, 19)));
+        stageStrip = Ui.stageStrip(this);
+        LinearLayout.LayoutParams stripParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 5));
+        stripParams.topMargin = Ui.dp(this, 4);
+        planCard.addView(stageStrip, stripParams);
+        LinearLayout.LayoutParams planCardParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 90));
+        planCardParams.topMargin = Ui.dp(this, 5);
+        root.addView(planCard, planCardParams);
+        LinearLayout overview = new LinearLayout(this);
+        overview.setGravity(Gravity.CENTER_VERTICAL);
+        planSummary = Ui.bold(this, "", Ui.LABEL, Ui.WHITE);
         weeklyLine = Ui.bold(this, "", Ui.LABEL, Ui.CYAN);
-        LinearLayout.LayoutParams weeklyParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 18));
-        weeklyParams.topMargin = Ui.dp(this, 2);
-        root.addView(weeklyLine, weeklyParams);
+        overview.addView(overviewCell("本次", planSummary), new LinearLayout.LayoutParams(0, -1, 1));
+        LinearLayout.LayoutParams weeklyCell = new LinearLayout.LayoutParams(0, -1, 1);
+        weeklyCell.leftMargin = Ui.dp(this, 7);
+        overview.addView(overviewCell("本周", weeklyLine), weeklyCell);
+        LinearLayout.LayoutParams overviewParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 54));
+        overviewParams.topMargin = Ui.dp(this, 7);
+        root.addView(overview, overviewParams);
         planDetails = Ui.text(this, "", 12, Ui.MUTED);
         planDetails.setVisibility(View.GONE);
         root.addView(planDetails, new LinearLayout.LayoutParams(0, 0));
 
         root.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 1));
-        // The single saturated action owns the page, as in Apple Workout. Green means exercise;
-        // yellow and red remain reserved for time and heart rate once the session is running.
-        android.widget.FrameLayout startBox = new android.widget.FrameLayout(this);
-        startBox.addView(Ui.glow(this, Ui.LIME, 70),
-                new android.widget.FrameLayout.LayoutParams(Ui.dp(this, 128), Ui.dp(this, 128), Gravity.CENTER));
-        start = Ui.bold(this, "开始", 25, Ui.BLACK);
-        start.setGravity(Gravity.CENTER);
-        start.setBackground(Ui.gradientOvalAction(this, Ui.LIME, Ui.GREEN));
-        start.setClickable(true);
-        start.setFocusable(true);
-        Ui.pressable(start);
-        startBox.addView(start, new android.widget.FrameLayout.LayoutParams(Ui.dp(this, 100), Ui.dp(this, 100), Gravity.CENTER));
-        root.addView(startBox, new LinearLayout.LayoutParams(-1, Ui.dp(this, 124)));
-        root.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 1));
+        start = Ui.iconAction(this, "开始训练", 18, Ui.BLACK, Ui.LIME, Ui.Symbol.PLAY);
+        start.setContentDescription("开始当前训练安排");
+        LinearLayout.LayoutParams startParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.ACTION_PRIMARY));
+        startParams.topMargin = Ui.dp(this, 8);
+        startParams.bottomMargin = Ui.dp(this, 8);
+        root.addView(start, startParams);
 
         sensorStatus = Ui.text(this, "", Ui.LABEL, Ui.MUTED); sensorStatus.setGravity(Gravity.CENTER);
         sensorStatus.setVisibility(View.GONE);
         root.addView(sensorStatus, new LinearLayout.LayoutParams(-1, Ui.dp(this, 18)));
-        TextView edit = Ui.action(this, "选择训练安排", 15, Ui.WHITE, Ui.PANEL);
-        LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 40));
+        TextView edit = Ui.iconAction(this, "更换计划", 14, Ui.WHITE, Ui.PANEL, Ui.Symbol.LIST);
+        LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.ACTION_SECONDARY));
         editParams.topMargin = Ui.dp(this, 3); root.addView(edit, editParams);
         LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 14));
         dotParams.topMargin = Ui.dp(this, 2);
@@ -201,15 +215,28 @@ public class MainActivity extends Activity {
         setContentView(pager);
     }
 
+    private LinearLayout overviewCell(String label, TextView value) {
+        LinearLayout cell = new LinearLayout(this);
+        cell.setOrientation(LinearLayout.VERTICAL);
+        cell.setGravity(Gravity.CENTER_VERTICAL);
+        cell.setPadding(Ui.dp(this, 12), Ui.dp(this, 6), Ui.dp(this, 12), Ui.dp(this, 6));
+        cell.setBackground(Ui.background(this, Ui.PANEL, Ui.RADIUS_CARD));
+        cell.addView(Ui.text(this, label, Ui.CAPTION, Ui.MUTED),
+                new LinearLayout.LayoutParams(-1, Ui.dp(this, 15)));
+        cell.addView(value, new LinearLayout.LayoutParams(-1, Ui.dp(this, 25)));
+        return cell;
+    }
+
     private void updatePlanPreview() {
         if (planLine == null || stages == null) return;
         if (stages.isEmpty()) {
             planLine.setText("暂无训练计划");
-            planSummary.setText("0 项训练内容");
+            planSummary.setText("暂无内容");
             workout.setText(PlanStore.name(this));
-            activityTitle.setText("请先添加计划");
+            activityType.setText("暂无可用计划");
             planDetails.setText(PlanStore.requirement(this));
             ready.setText(PlanStore.group(this));
+            stageStrip.setStages(java.util.Collections.emptyList());
             return;
         }
         updateClock();
@@ -220,16 +247,17 @@ public class MainActivity extends Activity {
             line += "  →  " + next.name() + " " + next.targetText();
         }
         planLine.setText(line);
+        stageStrip.setStages(stages);
         long meters = 0, seconds = 0;
         for (Stage item : stages) if (item.unit == Stage.Unit.DISTANCE) meters += item.target; else seconds += item.target;
-        String summary = stages.size() + " 项训练内容";
+        String summary = stages.size() + " 阶段";
         if (meters > 0) summary += String.format(Locale.CHINA, " · %.2f km", meters / 1000d);
         if (seconds > 0) summary += String.format(Locale.CHINA, " · %d 分钟", Math.max(1, seconds / 60));
         planSummary.setText(summary);
         workout.setText(PlanStore.name(this));
-        activityTitle.setText(activityTitle(stages));
+        activityType.setText(activityTitle(stages) + " · 间歇训练");
         planDetails.setText(PlanStore.requirement(this));
-        ready.setText(PlanStore.group(this) + " · 当前安排");
+        ready.setText(PlanStore.group(this) + " · 今日安排");
     }
 
     private void updateClock() {
@@ -239,13 +267,13 @@ public class MainActivity extends Activity {
     private void updateSessionCallToAction() {
         boolean recoverable = WorkoutService.hasRecoverableSession(this);
         boolean hasPlan = stages != null && !stages.isEmpty();
-        ready.setText(recoverable ? "上次训练可继续"
-                : hasPlan ? PlanStore.group(this) + " · 已就绪" : PlanStore.group(this));
+        ready.setText(recoverable ? "训练进行中"
+                : hasPlan ? PlanStore.group(this) + " · 今日安排" : PlanStore.group(this));
         ready.setTextColor(recoverable ? Ui.YELLOW : hasPlan ? Ui.LIME : Ui.MUTED);
         workout.setText(recoverable ? "继续上次训练" : PlanStore.name(this));
-        activityTitle.setText(recoverable ? "间歇训练"
-                : hasPlan ? activityTitle(stages) : "请先添加计划");
-        start.setText(recoverable ? "继续" : hasPlan ? "开始" : "不可用");
+        activityType.setText(recoverable ? "训练进行中"
+                : hasPlan ? activityTitle(stages) + " · 间歇训练" : "暂无可用计划");
+        start.setText(recoverable ? "继续训练" : hasPlan ? "开始训练" : "当前无可用计划");
         start.setContentDescription(recoverable ? "继续上次训练"
                 : hasPlan ? "开始训练" : "当前没有训练计划");
         start.setEnabled(recoverable || hasPlan);
@@ -264,6 +292,13 @@ public class MainActivity extends Activity {
         boolean gpsIssue = needsLocation() && (!locationGranted || !gpsEnabled);
         boolean heartIssue = hasHeartSensor && !heartGranted;
         boolean stepsIssue = needsLocation() && hasStepSensor && !stepsGranted;
+        boolean runtimePermissionMissing = !locationGranted || heartIssue || stepsIssue;
+        if (start != null && !WorkoutService.hasRecoverableSession(this)
+                && stages != null && !stages.isEmpty()) {
+            start.setText(runtimePermissionMissing ? "授权并开始训练" : "开始训练");
+            start.setContentDescription(runtimePermissionMissing
+                    ? "授权运动传感器并开始训练" : "开始训练");
+        }
         if (!gpsIssue && !heartIssue && !stepsIssue) {
             // The pairing code is setup material, not a permanent readout. Once a phone has paired
             // it only competes with the training controls for attention, so the row goes away.
@@ -302,19 +337,53 @@ public class MainActivity extends Activity {
             missing.add(Manifest.permission.POST_NOTIFICATIONS);
         }
         if (!missing.isEmpty()) { requestPermissions(missing.toArray(new String[0]), REQUEST_PERMISSIONS); return; }
+        requestBackgroundLocationOrStart();
+    }
+
+    private void requestBackgroundLocationOrStart() {
         if (needsLocation() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
                 && checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION}, REQUEST_BACKGROUND_LOCATION);
             return;
         }
-        startTraining();
+        requestWorkoutOverlayOrStart();
+    }
+
+    private void requestWorkoutOverlayOrStart() {
+        if (Settings.canDrawOverlays(this)) {
+            startTraining();
+            return;
+        }
+        android.content.SharedPreferences preferences =
+                getSharedPreferences("workout_surface", MODE_PRIVATE);
+        if (preferences.getBoolean("overlay_prompted", false)) {
+            startTraining();
+            return;
+        }
+        preferences.edit().putBoolean("overlay_prompted", true).apply();
+        try {
+            startActivityForResult(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName())), REQUEST_WORKOUT_OVERLAY);
+        } catch (RuntimeException ignored) {
+            startTraining();
+        }
     }
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
-        if (requestCode == REQUEST_PERMISSIONS && (!needsLocation() || checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)) requestAndStart();
-        else if (requestCode == REQUEST_BACKGROUND_LOCATION) startTraining();
-        else Toast.makeText(this, "需要定位权限才能记录距离", Toast.LENGTH_LONG).show();
+        if (requestCode == REQUEST_PERMISSIONS) {
+            updateSensorStatus();
+            if (needsLocation() && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                    != PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(this, "需要定位权限才能记录距离", Toast.LENGTH_LONG).show();
+                return;
+            }
+            // Heart-rate and activity recognition enrich the session but are not allowed to trap
+            // the runner in a repeated permission dialog after an explicit denial.
+            requestBackgroundLocationOrStart();
+            return;
+        }
+        if (requestCode == REQUEST_BACKGROUND_LOCATION) requestWorkoutOverlayOrStart();
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -322,6 +391,7 @@ public class MainActivity extends Activity {
         if (requestCode == REQUEST_SLEEP_PERMISSION && resultCode != RESULT_OK) {
             getPreferences(MODE_PRIVATE).edit().putBoolean("sleep_permission_prompted", false).apply();
         }
+        if (requestCode == REQUEST_WORKOUT_OVERLAY) startTraining();
     }
 
     private boolean needsLocation() {
@@ -365,7 +435,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams headingParams=new LinearLayout.LayoutParams(0,Ui.dp(this,40),1);headingParams.leftMargin=Ui.dp(this,9);header.addView(heading,headingParams);page.addView(header,new LinearLayout.LayoutParams(-1,Ui.dp(this,42)));
         pagerHistorySummary=Ui.bold(this,"",12,Ui.RED);page.addView(pagerHistorySummary,new LinearLayout.LayoutParams(-1,Ui.dp(this,24)));
         ScrollView scroll=new ScrollView(this);pagerHistoryList=new LinearLayout(this);pagerHistoryList.setOrientation(LinearLayout.VERTICAL);scroll.addView(pagerHistoryList);page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        TextView all=Ui.action(this,"查看完整历史",15,Ui.WHITE,Ui.PANEL);all.setOnClickListener(v->startActivity(new Intent(this,HistoryActivity.class)));page.addView(all,new LinearLayout.LayoutParams(-1,Ui.dp(this,42)));
+        TextView all=Ui.iconAction(this,"查看完整历史",15,Ui.WHITE,Ui.PANEL,Ui.Symbol.HISTORY);all.setOnClickListener(v->startActivity(new Intent(this,HistoryActivity.class)));page.addView(all,new LinearLayout.LayoutParams(-1,Ui.dp(this,Ui.ACTION_SECONDARY)));
         page.addView(Ui.pagerDots(this,1,3),new LinearLayout.LayoutParams(-1,Ui.dp(this,14)));
         return page;
     }
@@ -390,7 +460,11 @@ public class MainActivity extends Activity {
         heading.addView(Ui.text(this,"按阶段完成本次训练",Ui.CAPTION,Ui.MUTED),new LinearLayout.LayoutParams(-1,Ui.dp(this,14)));
         LinearLayout.LayoutParams headingParams=new LinearLayout.LayoutParams(0,Ui.dp(this,40),1);headingParams.leftMargin=Ui.dp(this,9);header.addView(heading,headingParams);page.addView(header,new LinearLayout.LayoutParams(-1,Ui.dp(this,48)));
         ScrollView scroll=new ScrollView(this);pagerPlanList=new LinearLayout(this);pagerPlanList.setOrientation(LinearLayout.VERTICAL);scroll.addView(pagerPlanList);page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        TextView edit=Ui.action(this,"选择训练安排",16,Ui.BLACK,Ui.LIME);edit.setOnClickListener(v->startActivity(new Intent(this,PlanActivity.class)));page.addView(edit,new LinearLayout.LayoutParams(-1,Ui.dp(this,44)));
+        LinearLayout actions=new LinearLayout(this);
+        TextView edit=Ui.iconAction(this,"选择计划",15,Ui.BLACK,Ui.LIME,Ui.Symbol.LIST);edit.setOnClickListener(v->startActivity(new Intent(this,PlanActivity.class)));
+        LinearLayout.LayoutParams editParams=new LinearLayout.LayoutParams(0,Ui.dp(this,Ui.ACTION_PRIMARY),1);editParams.rightMargin=Ui.dp(this,6);actions.addView(edit,editParams);
+        TextView voice=Ui.iconAction(this,"提示音",15,Ui.WHITE,Ui.PANEL,Ui.Symbol.SOUND);voice.setOnClickListener(v->startActivity(new Intent(this,VoiceCueSettingsActivity.class)));actions.addView(voice,new LinearLayout.LayoutParams(0,Ui.dp(this,Ui.ACTION_PRIMARY),1));
+        page.addView(actions,new LinearLayout.LayoutParams(-1,Ui.dp(this,Ui.ACTION_PRIMARY)));
         page.addView(Ui.pagerDots(this,2,3),new LinearLayout.LayoutParams(-1,Ui.dp(this,14)));
         return page;
     }
@@ -398,14 +472,14 @@ public class MainActivity extends Activity {
     private void renderPagerPages() {
         List<WorkoutRecord> records = HistoryStore.load(this);
         WeeklyStats week = WeeklyStats.of(records, System.currentTimeMillis());
-        if (weeklyLine != null) Ui.setTextIfChanged(weeklyLine, week.sessions == 0 ? "本周还没有训练"
-                : "本周 " + Format.distance(week.meters) + " · " + week.sessions + " 次 · " + Format.duration(week.activeMillis));
+        if (weeklyLine != null) Ui.setTextIfChanged(weeklyLine, week.sessions == 0 ? "暂无记录"
+                : Format.distance(week.meters) + " · " + week.sessions + " 次");
         if(pagerHistoryList!=null){pagerHistoryList.removeAllViews();Ui.setTextIfChanged(pagerHistorySummary,records.isEmpty()?"还没有训练记录":records.size()+" 次训练 · 本周 "+Format.distance(week.meters));
             // Distance-first rows, matching HistoryActivity: the figure a runner scans by leads,
             // the timestamp becomes quiet metadata on the right.
             SimpleDateFormat whenFormat=new SimpleDateFormat("MM/dd HH:mm",Locale.CHINA);
             int previewCount=Math.min(4,records.size());
-            for(int index=0;index<previewCount;index++){WorkoutRecord record=records.get(index);LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.VERTICAL);row.setPadding(Ui.dp(this,14),Ui.dp(this,8),Ui.dp(this,14),Ui.dp(this,8));row.setBackground(Ui.background(this,Ui.PANEL,18));
+            for(int index=0;index<previewCount;index++){WorkoutRecord record=records.get(index);LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.VERTICAL);row.setPadding(Ui.dp(this,14),Ui.dp(this,8),Ui.dp(this,14),Ui.dp(this,8));row.setBackground(Ui.background(this,Ui.PANEL,Ui.RADIUS_CARD));
                 LinearLayout headline=new LinearLayout(this);headline.setGravity(Gravity.CENTER_VERTICAL);
                 TextView value=Ui.numeral(this,Format.distance(record.distanceMeters),21,Ui.LIME);headline.addView(value,new LinearLayout.LayoutParams(0,-2,1));
                 TextView when=Ui.text(this,whenFormat.format(new Date(record.startedAt)),Ui.CAPTION,Ui.MUTED);headline.addView(when,new LinearLayout.LayoutParams(-2,-2));

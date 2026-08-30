@@ -23,7 +23,7 @@ git diff --check
 - 修改 API/MCP：验证 401、错误 JSON、超时、手机不在线、手表不在线和正常路径。
 - 修改手机云同步：验证 V3 exact fields、25 项上限、active credential/config binding、outbox/cursor reset、冲突候选保留、owner `revisionDomainId`、计划 canonical fingerprint/并发护栏、workout tombstone、命令即时二次 exchange、离线过期、WebSocket 重连、备份排除和隐私字段扫描；Phone→Watch projection 另测 pending ID、pairing target、ACK-loss、journal 重建、空库和无网 Worker；V2 只作为迁移历史测试。
 - 修改 Tunnel：执行 `powershell -File mcp/tests/test_persistent_tunnel.ps1`，再执行 API-011 真机/重启验证。
-- 修改手表 UI：至少检查 378×496 截图、底部安全区、点击区域、活动训练亮屏恢复和阶段提示不拦手势；修改手机 UI：执行 PT-026/027，检查亮色系统栏、WindowInsets、浮动底栏遮挡、48dp 触控区、可访问名称与双端启动器一致性。修改睡眠展示还必须执行 PT-008/022/028，证明离线缓存、缺失字段和多 session 聚合。
+- 修改手表 UI：至少检查 378×496 截图、底部安全区、点击区域、活动训练亮屏恢复和阶段提示不拦手势；修改手机 UI：执行 PT-026/027，检查亮色系统栏、WindowInsets、贴底导航遮挡、48dp 触控区、可访问名称与双端启动器一致性。修改睡眠展示还必须执行 PT-008/022/028，证明离线缓存、缺失字段和多 session 聚合。
 
 ## 3. 手表真机回归
 
@@ -32,6 +32,12 @@ git diff --check
 | WT-001 | 首次启动权限 | 清数据后启动并逐项授权 | 权限解释和按钮可见；拒绝后可再次处理 |
 | WT-002 | 默认计划 | 首次进入计划页 | 显示 1 km 跑 + 200 m 走 |
 | WT-003 | 时间计划 | 创建 15 秒跑 + 15 秒休息 | 按时间自动切换并发出短促声音/震动；轻量提示 2 秒内消失且不需要关闭 |
+| WT-030 | 开始倒计时单次与恢复 | 在 OWW221 准备页点击开始，记录 3/2/1/GO；倒计时中按 Home/息屏后返回；重复点击开始与取消各 3 次 | 3 秒绝对时基只产生一次 3、2、1、GO；重复点击不会加速/重置；离开后返回显示同一剩余时基，GO 后只进入一次 TrainingActivity；取消清除 deadline 且不创建训练记录 |
+| WT-031 | GPS 首 fix 与功耗 | 室内无 fix、户外搜星、暂停/恢复各持续 2 分钟；读取 `dumpsys location`、BatteryStats 和服务快照 | 点击开始不等待 GPS；无 fix 时按系统运动或步数降级并明确标注；首 fix 请求最多每 15 秒重试；训练中 GPS 约 2 秒/2 米，暂停约 10 秒；准备态无 `WatchIntervals:Workout` wakelock，训练开始后才持有 |
+| WT-032 | 阶段语音与音色 | 分别试听清晰/沉稳/活力；运行 5 秒时间阶段和剩余 50 米距离阶段；检查系统音频轨道与语音开关 | 播报包含阶段序号、类型和灵活目标；预告只触发一次；关闭后无 TTS 但仍有短音/震动；AudioTrack 使用导航语音属性且不加载应用内神经模型 |
+| PT-033 | 计划删除隔离 | 准备同分组两项安排，删除其中一项；尝试删除非空分组；重命名分组后编辑另一项 | 只删除目标 planId；兄弟安排、分组及阶段不变；非空分组删除被拒绝；编辑后 groupId 不变 |
+| PT-034 | Cloud→Phone→Watch 收敛 | ChatGPT 修改计划后执行 Phone 同步，读取生产 D1、Phone plan_library_v2、Watch plan_library_v2 和两类 outbox | 三端 revision、组数、安排数和 selectedPlanId 一致；Cloud/Watch outbox 为 0；缺 device token 时 UI 明确阻断 |
+| MCP-013 | 训练周期完整 CRUD | 对临时分组/安排执行 get、upsert group、upsert plan、replace stages、move、select、delete plan、delete empty group；并测试缺失 ID/非空组 | 阶段顺序与目标精确回读；非空组、缺失计划/组返回 conflict 且 revision 不推进；清理后库恢复基线 |
 | WT-004 | 距离计划无 GPS | 室内关闭/遮挡 GPS 后开始并行走 | 开始不阻塞，显示数据来源，实际步数增加 |
 | WT-005 | 户外 GPS | 开阔处等待定位后移动至少 10 m | 轨迹连续，异常跳点不计入，距离合理 |
 | WT-006 | 暂停 | 训练中暂停并移动 | 活动时间、阶段进度、距离和步数不增加 |
@@ -48,15 +54,16 @@ git diff --check
 | WT-017 | 长时间追加轨迹 | 注入 7200/14400 个混合来源点并中断恢复 | 无 OOM；检查点大小有界；损坏尾行可忽略；原始点和统计一致 |
 | WT-018 | 来源切换 | 步数、手表 GPS、手机 GPS、系统距离依次切换 | 不重复累计；速度窗口重置；来源距离守恒 |
 | WT-019 | 五页训练 UI | 378×496 遍历控制、综合仪表、训练数据、阶段、轨迹五页 | 文字和安全区正常；默认综合仪表页；控制入口可达；横滑不误触结束 |
-| WT-020 | 手表全界面视觉回归 | 遍历主页三屏、计划列表/详情/确认、准备/倒计时、训练五屏/浮层、历史列表/详情 | 统一黑底运动仪表层级；长名称可截断或滚动；主操作、危险操作和真实/缺失数据状态不混淆 |
+| WT-020 | 手表全界面视觉回归 | 遍历主页三屏、计划列表/详情/确认、准备/倒计时、训练五屏/浮层、历史列表/详情 | 统一纯黑仪表层级；当前计划面板含 Stage.Kind 色带；准备页无 halo/圆形 Start，来源状态和全宽动作完整；训练控制无 Unicode 符号或圆控件，暂停/继续与结束为双列图标动作；计划/历史/返回/删除图标一致；训练数据同屏且长名称、危险操作、缺失数据不混淆 |
 | WT-021 | 手表翻页、反馈与渲染性能 | OWW221 60 Hz 上以同一 280 ms 手势脚本各连续 5 轮覆盖主页 `0↔1↔2`、训练 `0↔1`、`1↔2`、`2↔3`、`3↔4`；在吸附未结束时点按子控件；检查固定页码、按钮按压、3-2-1-GO，并在含真实轨迹的页面前后采集 `gfxinfo` | 每次释放都吸附到完整页面且点按不会留下半页；页码固定在屏幕底部并随手指连续移动/拉伸；按钮呈现 0.94 缩放与触觉，倒计时逐拍反馈；拖动中指标不抢帧、停稳后补新数据；轨迹仅在停稳可见时激活、离页暂停。仅比较帧数接近的同脚本样本，最终候选中位结果不得劣于已记录中间基线，并记录 frames、jank、P50/P90 |
 | WT-022 | 训练五屏 496px 纵向占用 | 在 OWW221 逐屏截图控制、综合仪表、训练数据、阶段、轨迹，分别检查无心率/无轨迹空状态 | 有效内容延伸到底部安全区，不出现由 weighted 空 View 造成的 90px 级黑下巴；固定页码不压内容；无真实数据不绘制假曲线/轨迹 |
 | WT-023 | 真实沿河轨迹地理细节 | 使用绑定 `com.poyi.watchintervals` 和实际签名的百度 Android AK 构建，在 OWW221 打开现有 2.43km、280 点沿河记录，对照系统运动的河道、桥、堤岸和环线，并检查无网络/授权失败占位 | 非卫星 Baidu 暗色矢量底图可见；历史原始路线、起终点完整且坐标文件不被改写；相机按 15dp/25dp 内容框取景，跑道级细路不过度放粗；无 AK 时明确显示授权待配置，不静默退回高德；用户确认前不得判定通过 |
 | WT-024 | 历史轨迹恢复与户外定位精度 | 打开 legacy 旧记录，检查原始点不因迁移 accuracy 被隐藏；准备页室内/户外分别记录 GNSS provider、卫星数和实际 accuracy | 旧路线完整显示且文件不改写；室内无 fix 时不宣称精度；开阔户外取得真实 fix 后记录是否低于 35m、稳定时间、路线闭环和距离来源 |
 | WT-025 | 训练完成同步提示 | 与已配对手机保持 BLE，完成一条短训练并正常结束；随后重复触发连接恢复 | 历史仅新增一次；手表只发送加密 `history_changed` 提示且无训练/位置/健康正文；手机实际回读 `/v1/history`，重复提示或重连不产生重复云训练 |
 | WT-026 | 阶段切换不阻断操作 | 在训练任一数据页持续横滑并跨过 15 秒阶段边界，分别覆盖屏幕亮起和息屏状态 | 服务侧声音/震动只触发一次；可见卡片不可聚焦、不可点击、不吃横滑，最迟 2 秒隐藏；恢复 Activity 不重播旧提示 |
-| WT-027 | 活动训练任务路由 | 训练中依次按 Home、息屏/亮屏、点启动器、点训练通知并模拟 Activity 重建 | 每个入口都回到同一活动训练界面和服务快照；主页/历史页不能因同包前台误挡恢复；结束后启动器正常进入主页 |
+| WT-027 | 活动训练任务路由 | 准备和训练中分别按 Home、息屏/亮屏、点启动器、点训练通知并模拟 Activity 重建 | 准备态回到 `WarmupActivity`、运行/暂停态回到同一活动 `TrainingActivity` 和服务快照；屏幕广播节流且不重复创建任务；主页/历史页不能因同包前台误挡恢复；结束后启动器正常进入主页 |
 | WT-028 | 危险确认、层级返回与 TalkBack | 在历史详情和活动训练分别打开删除/结束确认，使用触摸、TalkBack、系统返回、标题返回和右滑；分别在 1.0/1.3 font scale 遍历 pager | 确认前无副作用，背景不响应且不进入可访问焦点；返回先关确认，历史详情再回列表，列表才退出；Service 晚绑定后结束只投递一次；pager 提供前后翻页 action、页码播报且离屏页面不可达；40dp 目标和文字不重叠 |
+| WT-029 | 运行时权限拒绝与降级 | 清除 Watch 的定位、心率和活动识别授权；验证首页 CTA，再依次只授定位、拒绝心率/步数、拒绝后台定位并开始距离计划 | 缺权限时 CTA 为“授权并开始训练”；前台定位拒绝只提示一次且不开始距离计划；前台定位已授后，心率/步数拒绝不重复弹窗并按缺失数据降级；后台定位拒绝仍可开始当前前台训练 |
 
 ### OWW221 API 30 等价模拟门禁
 
@@ -151,12 +158,13 @@ git diff --check
 | PT-023 | 在线控制时延 | WebSocket 在线时以非当前 `planId` 调用 start，再执行 pause/resume/stop 各 3 次；从 Cloud MCP 创建到手表 ACK 均小于 10 秒，启动 profile 与请求目标一致，同 commandId 不重复执行 |
 | PT-024 | 离线命令过期 | 手机或手表离线创建命令；云端显示 pending/delivered 后 30 秒过期，恢复连接后旧命令不执行，迟到结果被拒绝 |
 | PT-025 | V3 state 恢复 | 在 active request、命令成功未回传、plan conflict 和 cursor ahead 各边界终止 Phone 进程；重启后 outbox/candidate/result 不丢且不会重复作用 |
-| PT-026 | 手机亮色视觉与安全区 | API 35 模拟器及真实手机遍历四目的地、连接设置、计划编辑、训练断连/运行/暂停、历史有/无轨迹、睡眠有/无数据，再以长中文、日光环境和系统大字体复核；浅色内容卡与功能浮层层级稳定，亮色系统栏、键盘、底部导航不遮挡内容，最后一项可滚出，标题/按钮不裁切，所有交互目标至少 48dp 且状态不只靠颜色 |
+| PT-026 | 手机亮色视觉与安全区 | API 35 模拟器及真实手机遍历四目的地、连接设置、计划编辑、训练断连/空闲/运行/暂停、历史有/无轨迹、睡眠有/无数据，再以长中文、日光环境和系统 1.0/1.3/2.0 字体复核；打开键盘后点设置面板空白与遮罩 | BLE/LAN 状态位于品牌顶栏且整块可点；24sp 标题、24dp 品牌、8dp 数据卡、60dp 深色底栏和深色当前计划/训练面板形成稳定层级；系统导航栏与底栏连续，无悬浮玻璃/粉绿混搭/装饰圆环；空闲在线有 Start；技术字段默认折叠；最后一项可滚出，交互目标至少 48dp |
 | PT-027 | 原创图标与启动器一致性 | 并排检查 Phone/Watch 普通、圆形/方圆/水滴启动器蒙版，Phone Android 13 themed icon、深浅壁纸及底栏四种选中态；双端“间歇路线”path、颜色、背景和安全区一致，单色层可辨，训练小人在 34–38dp 无折断感，底栏不出现 OEM 字体替代符 |
 | PT-028 | 睡眠离线缓存 | 在线读取最近 31 天后记录更新时间并断开 BLE/LAN、重启 Phone；再次进入睡眠页，再模拟刷新失败、空响应和损坏缓存 | 断连/暂时失败仍显示最后成功的完整 record/session/stage 与阶段总览并标注缓存时间；失败或空响应不清空有效数据；损坏缓存安全显示空态并可在下次成功刷新后恢复 |
-| PT-029 | 计划列表/详情/编辑与无障碍 | 创建含重复阶段、时间/距离混合和长名称的计划；依次浏览列表、详情、编辑、旋转/重建、返回、保存、设为当前和删除，并在 1.0/1.3/2.0 font scale + TalkBack 下操作 | 列表不堆删除按钮；详情完整显示压缩序列和阶段；草稿重建不丢、放弃需确认；保存不切换当前，“设为当前”才投影手表；单位切换使用安全默认值；按钮至少 48dp 且朗读阶段序号/当前值 |
-| PT-030 | 同步 single-flight 与 LAN→BLE 回退 | 同时触发进入睡眠页、完整同步和 Sleep Worker，随后分别在 LAN 中途失败、BLE 未认证/已认证、原请求过期和 POST 写请求下重复 | 31 天窗口只发生一组 5 页读取，所有等待者得到同一结果或同一失败且下一轮可恢复；LAN GET 只在原 TTL 内经已认证 BLE 回退，过期和写请求不重放；UI 连接状态与同步进度互不覆盖 |
+| PT-029 | 计划列表/详情/编辑与无障碍 | 创建含重复阶段、时间/距离混合和长名称的计划；依次浏览列表、分组更多菜单、详情、编辑、旋转/重建、返回、保存、设为当前和删除，并在 1.0/1.3/2.0 font scale + TalkBack 下操作 | 分组行只保留新增/更多，重命名与删除菜单一步可达；详情完整显示压缩序列和阶段；草稿重建不丢、放弃需确认；保存不切换当前，“设为当前”才投影手表；类型/单位为显式分段选择，同单位换类型保留目标值，跨单位使用安全默认值；操作至少 48dp 且朗读阶段序号/选项 |
+| PT-030 | 同步/连接 single-flight 与 LAN→BLE 回退 | 同时触发页面重连、CompanionService、完整同步和 Sleep Worker；分别覆盖 LAN 在线时 BLE 断开、LAN 中途失败、BLE 未认证/已认证、原请求过期和 POST 写请求 | 同一时刻只存在一轮连接和一组 31 天分页；LAN 在线恢复 BLE 时 UI 保持可用且后台重试，不写 BACKOFF；无可用 transport 才退避；LAN GET 只在原 TTL 内经已认证 BLE 回退，过期和写请求不重放；双端 API/BLE 服务任一启动失败不阻断另一服务，销毁后 watchdog 仍挂起 |
 | PT-031 | 睡眠缓存备份边界 | 检查 debug/release merged resources 与 `dumpsys package` backup 配置，并在测试账号执行一次 cloud backup/device transfer 清单抽检 | legacy Auto Backup、Android 12+ cloud backup 和 device transfer 均排除 `phone_sleep_cache.xml`；缓存只保留在原设备本机，其他敏感 prefs 排除项不回退 |
+| PT-032 | 今日训练与按需计划管理 | 冷启动 Phone，依次从今天打开训练控制、进入管理训练计划、打开详情/编辑并返回；在 Watch 点击当前计划面板和底部更换计划 | Phone 首屏只显示当前训练与两个清晰入口，不直接铺开计划库；训练入口切到训练目的地；管理入口进入计划库，返回恢复今天；底栏顺序为今天/训练/记录/恢复；Watch 两个入口都进入 PlanActivity 且不修改当前训练 |
 
 ### 2026-08-04 双端覆盖安装烟测
 
@@ -272,7 +280,7 @@ git diff --check
 | --- | --- | --- |
 | BLE-001 | 无共同 Wi-Fi、关闭无线 ADB | 60 秒内自动连接，不输入 IP，状态/计划/控制/定位可用 |
 | BLE-002 | 手机与手表各息屏 5 分钟 | 连接保持或可自动恢复，无需打开开发者设置 |
-| BLE-003 | 手机进程回收、手表 Activity 关闭 | 前台连接服务恢复，训练服务不受影响 |
+| BLE-003 | 手机/手表进程回收、Activity 关闭 | 前台 API/BLE 服务任一启动失败不阻断另一服务；最迟 5 分钟 watchdog 恢复，训练服务不受影响 |
 | BLE-004 | 手机、手表、双端重启 | 无需重新输入验证码，自动恢复已配对身份 |
 | BLE-005 | 双端蓝牙分别关闭再开启 | 退避后自动连接，pending 不丢失、不重复 |
 | BLE-006 | 10 次连接/断开 | 不永久卡在 CONNECTING，不需清数据 |
@@ -329,6 +337,27 @@ git diff --check
 - 进程恢复：`am crash` 后进程消失、`/v1/health` 不可达；`dumpsys deviceidle tempwhitelist`（等价于精确闹钟投递时的临时白名单）后触发 `WATCHDOG` 广播，进程重建、`/v1/health` 恢复 401、看门狗重新挂起。
 - 监听器硬化：绑定失败路径现有明确日志与退避重试，`logcat -s PhonePlanBridge` 可见 `API listening on 8766`。
 - 未覆盖：开阔户外 GNSS 多普勒配速对比、非充电长时间功耗、MIUI 自启动关闭时的恢复行为。
+
+### 0.23.0 训练流程、亮屏恢复与语音证据（2026-08-30）
+
+- ASCII 工作树双端 JVM：50 个 suite、214 项、0 failure/error/skipped；原中文路径仍复现 BUG-062，编译、Lint 与 APK 不受影响。
+- 原仓库双端 lintDebug 与 assembleDebug 通过，git diff --check 无 whitespace error。
+- WT-030：OWW221 录屏逐帧看到 3、2、1、GO，随后只进入一次阶段仪表页；倒计时页同屏心率、累计距离、热量，无底部裁切。
+- WT-007/BUG-072：用 dumpsys battery unplug 排除 USB“充电完成”全屏层后，训练中息屏先回 Launcher；亮屏后 overlay 可见窗口触发 TrainingActivity START/Displayed，mCurrentFocus 与 mFocusedApp 均回到 TrainingActivity。
+- WT-031 室内部分：训练 GPS interval=2s 且持有 WatchIntervals:Workout partial wakelock；暂停 interval=10s 且当前 wakelock 消失；恢复 interval=2s 并重新持有。暂停单次 fix 取消与禁止重试由源码契约和 JVM 策略覆盖；户外首 fix、BatteryStats/Doze/长时间功耗仍开放。
+- WT-032：系统查询发现 OWW221 内置 com.yuemeng.speechsuite；补齐 Android 11 TTS_SERVICE package visibility 后，试听时 dumpsys audio 显示 TTS 进程 AudioTrack state:started，usage=USAGE_ASSISTANCE_NAVIGATION_GUIDANCE，content=CONTENT_TYPE_SPEECH。
+- 所有短测试训练通过应用详情页删除/确认按钮清理；最终 hierarchy 为“6 次训练 · 本周 6.31 km”。
+- 最终 Watch APK SHA-256：0DE4664C8711552F2911EC04F658D8DA4E6051CA588B10020FDCF7458C0F0010；最终 Phone APK SHA-256：00EB367633D47EAD44A596C258823C76B4FEF02556AE2842D963EAF6472F6602。两台设备 base.apk 回读与本地逐字一致。
+
+### Phone 0.25.1 计划安全与生产收敛证据（2026-08-30）
+
+- 修改前通过 run-as 备份 Phone 原始计划库与 Watch projection journal；基线为 4 个分组、12 个安排，未清数据。
+- ASCII 工作树 Android JVM：54 个 suite、234 项、0 failure/error/skipped；新增稳定 groupId、单项删除隔离、非空组拒绝、Cloud 每请求 5 项和 Watch 分组优先 UI 契约。
+- Cloud MCP：typecheck 通过；静态 10、schema 5、D1 8、Worker 39 项全部通过。Worker 测试覆盖 get plan、replace stages、move plan、非空组/缺失 ID conflict。
+- 真机 Cloud：重新 provision 的 device token 只以 Keystore ciphertext/nonce 保存；首次 25 项回填复现 SocketTimeoutException，降为 5 项后 HTTP 200，Cloud outbox 0。
+- 生产 D1、Phone、Watch 均回读 revision 40、8 个分组、26 个安排，selectedPlanId 存在；Phone→Watch projection outbox 为 0，连接状态 CONNECTED_BLE_LAN、pendingOperations=0。原 Phone 12 个 planId 在新 26 项中缺失数为 0。
+- UI：Phone“今天”显示 7 天周期中的 4 项可扫读列表；计划库显示“新建安排/新建分组”，非空分组删除项父节点 clickable=true 但 enabled=false。OWW221 计划首层显示 8 个分组，进入“减肥”只显示该组 day1。
+- 最终 Watch APK SHA-256：872084D57D47B1AF62DD126CB07F810832BDC26EE873C35933E4909837FB6C08；Phone APK SHA-256：6FF7ACD6D4D3DA6E1DFBDFB33069DB14601E6DDCF3B8DB90134D1A59A587C844。设备 base.apk 与本地逐字一致。
 
 ## 6. 当次开发闭环门禁
 

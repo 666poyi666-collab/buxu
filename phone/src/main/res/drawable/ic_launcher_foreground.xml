@@ -2,12 +2,12 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <!-- Original "interval route" mark: three ordered stages fold into a forward action. -->
+    <!-- Staged route mark: two folded stage legs resolve into a single forward action. -->
     <path android:fillColor="@android:color/transparent" android:strokeColor="#84E66A"
         android:strokeWidth="7" android:strokeLineCap="round" android:strokeLineJoin="round"
-        android:pathData="M32,35 H67 C73.08,35 78,39.92 78,46 C78,52.08 73.08,57 67,57 H44" />
+        android:pathData="M28,36 H58 A8,8 0 0 1 58,52 H42" />
     <path android:fillColor="@android:color/transparent" android:strokeColor="#48CBEA"
         android:strokeWidth="7" android:strokeLineCap="round" android:strokeLineJoin="round"
-        android:pathData="M64,57 H41 C34.92,57 30,61.92 30,68 C30,74.08 34.92,79 41,79 H73" />
-    <path android:fillColor="#FF4D67" android:pathData="M65,72 L76,79 L65,86 Z" />
+        android:pathData="M42,60 H62 A8,8 0 0 1 62,76 H34" />
+    <path android:fillColor="#FF4D67" android:pathData="M70,68 L84,75 L70,82 Z" />
 </vector>

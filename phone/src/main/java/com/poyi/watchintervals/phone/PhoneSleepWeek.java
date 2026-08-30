@@ -8,14 +8,14 @@ import java.util.Collections;
 import java.util.List;
 
 /** Seven-night projection used by the compact trend chart. */
-final class PhoneSleepWeek {
-    final List<Night> nights;
+public final class PhoneSleepWeek {
+    public final List<Night> nights;
 
     private PhoneSleepWeek(List<Night> nights) {
         this.nights = Collections.unmodifiableList(nights);
     }
 
-    static PhoneSleepWeek from(JSONArray records) {
+    public static PhoneSleepWeek from(JSONArray records) {
         ArrayList<Night> newestFirst = new ArrayList<>();
         if (records != null) for (int index = 0; index < records.length()
                 && newestFirst.size() < 7; index++) {
@@ -32,16 +32,16 @@ final class PhoneSleepWeek {
         return new PhoneSleepWeek(newestFirst);
     }
 
-    long maximumMinutes() {
+    public long maximumMinutes() {
         long maximum = 8L * 60L;
         for (Night night : nights) maximum = Math.max(maximum, night.durationMinutes);
         return maximum;
     }
 
-    static final class Night {
-        final long timestamp;
-        final long durationMinutes;
-        final int score;
+    public static final class Night {
+        public final long timestamp;
+        public final long durationMinutes;
+        public final int score;
 
         Night(long timestamp, long durationMinutes, int score) {
             this.timestamp = timestamp;

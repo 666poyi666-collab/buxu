@@ -2,12 +2,13 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="48dp" android:height="48dp"
     android:viewportWidth="48" android:viewportHeight="48">
+    <!-- Legacy flat mark. Same staged route geometry as the adaptive layer, scaled by 4/9. -->
     <path android:fillColor="#0B1020" android:pathData="M24,1A23,23 0,1 0,24 47A23,23 0,1 0,24 1" />
     <path android:fillColor="@android:color/transparent" android:strokeColor="#84E66A"
         android:strokeWidth="3.1" android:strokeLineCap="round" android:strokeLineJoin="round"
-        android:pathData="M14.2,15.7 H29.8 C32.5,15.7 34.7,17.9 34.7,20.6 C34.7,23.3 32.5,25.4 29.8,25.4 H19.6" />
+        android:pathData="M12.44,16 H25.78 A3.56,3.56 0 0 1 25.78,23.11 H18.67" />
     <path android:fillColor="@android:color/transparent" android:strokeColor="#48CBEA"
         android:strokeWidth="3.1" android:strokeLineCap="round" android:strokeLineJoin="round"
-        android:pathData="M28.5,25.4 H18.3 C15.6,25.4 13.4,27.6 13.4,30.3 C13.4,33 15.6,35.1 18.3,35.1 H32.5" />
-    <path android:fillColor="#FF4D67" android:pathData="M28.5,30.7 L34.2,35.1 L28.5,39.5 Z" />
+        android:pathData="M18.67,26.67 H27.56 A3.56,3.56 0 0 1 27.56,33.78 H15.11" />
+    <path android:fillColor="#FF4D67" android:pathData="M31.11,30.22 L37.33,33.33 L31.11,36.44 Z" />
 </vector>

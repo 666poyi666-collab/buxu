@@ -4,29 +4,29 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 /** Truth-preserving projection of one system sleep record for the phone overview. */
-final class PhoneSleepOverview {
-    final long timestamp;
-    final long totalDurationMinutes;
-    final boolean durationAvailable;
-    final int sleepScore;
-    final boolean scoreAvailable;
-    final int spo2AveragePercent;
-    final boolean spo2Available;
-    final int heartRateBenchmarkBpm;
-    final boolean heartRateAvailable;
-    final double breathRateBenchmarkPerMinute;
-    final boolean breathRateAvailable;
-    final long deepMinutes;
-    final boolean deepAvailable;
-    final long lightMinutes;
-    final boolean lightAvailable;
-    final long remMinutes;
-    final boolean remAvailable;
-    final long awakeMinutes;
-    final boolean awakeAvailable;
-    final boolean stageBreakdownAvailable;
-    final int sessionCount;
-    final int rawStageCount;
+public final class PhoneSleepOverview {
+    public final long timestamp;
+    public final long totalDurationMinutes;
+    public final boolean durationAvailable;
+    public final int sleepScore;
+    public final boolean scoreAvailable;
+    public final int spo2AveragePercent;
+    public final boolean spo2Available;
+    public final int heartRateBenchmarkBpm;
+    public final boolean heartRateAvailable;
+    public final double breathRateBenchmarkPerMinute;
+    public final boolean breathRateAvailable;
+    public final long deepMinutes;
+    public final boolean deepAvailable;
+    public final long lightMinutes;
+    public final boolean lightAvailable;
+    public final long remMinutes;
+    public final boolean remAvailable;
+    public final long awakeMinutes;
+    public final boolean awakeAvailable;
+    public final boolean stageBreakdownAvailable;
+    public final int sessionCount;
+    public final int rawStageCount;
 
     private PhoneSleepOverview(long timestamp, long totalDurationMinutes,
             boolean durationAvailable, int sleepScore, boolean scoreAvailable,
@@ -49,19 +49,19 @@ final class PhoneSleepOverview {
         this.breathRateBenchmarkPerMinute = breathRateBenchmarkPerMinute;
         this.breathRateAvailable = breathRateAvailable;
         this.deepMinutes = deepMinutes;
-        this.deepAvailable = deepAvailable;
         this.lightMinutes = lightMinutes;
-        this.lightAvailable = lightAvailable;
         this.remMinutes = remMinutes;
-        this.remAvailable = remAvailable;
         this.awakeMinutes = awakeMinutes;
+        this.deepAvailable = deepAvailable;
+        this.lightAvailable = lightAvailable;
+        this.remAvailable = remAvailable;
         this.awakeAvailable = awakeAvailable;
         this.stageBreakdownAvailable = stageBreakdownAvailable;
         this.sessionCount = sessionCount;
         this.rawStageCount = rawStageCount;
     }
 
-    static PhoneSleepOverview from(JSONObject record) {
+    public static PhoneSleepOverview from(JSONObject record) {
         JSONArray sessions = record == null ? null : record.optJSONArray("sessions");
         int sessionCount = sessions == null ? 0 : sessions.length();
         long earliest = positiveLong(record, "timestamp");
@@ -119,11 +119,11 @@ final class PhoneSleepOverview {
                 sessionCount, stageCount);
     }
 
-    long stageTotalMinutes() {
+    public long stageTotalMinutes() {
         return deepMinutes + lightMinutes + remMinutes + awakeMinutes;
     }
 
-    long[] stageMinutes() {
+    public long[] stageMinutes() {
         return new long[]{deepMinutes, lightMinutes, remMinutes, awakeMinutes};
     }
 

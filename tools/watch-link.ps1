@@ -42,6 +42,8 @@ $TaskName = 'PoyiWatchAdbLink'
 $AdbPort = 5555
 # Product string reported by the OPPO Watch 4 Pro dev unit; keeps other phones/emulators out.
 $WatchProduct = 'OWW221'
+$StateDirectory = Join-Path (Split-Path -Parent $PSScriptRoot) '.work'
+$EndpointState = Join-Path $StateDirectory 'watch-adb-endpoint.txt'
 
 function Get-Adb {
     # @(...) around the pipeline result: a single match would otherwise index as a char.
@@ -69,11 +71,13 @@ function Invoke-Adb {
 function Get-Devices {
     $lines = (Invoke-Adb @('devices', '-l')) -split "`r?`n" | Select-Object -Skip 1
     foreach ($line in $lines) {
-        if ($line -notmatch '^\s*(\S+)\s+device\b') { continue }
+        if ($line -notmatch '^\s*(\S+)\s+(device|offline)\b') { continue }
         $serial = $Matches[1]
+        $state = $Matches[2]
         $product = if ($line -match 'product:(\S+)') { $Matches[1] } else { '' }
         [pscustomobject]@{
             Serial    = $serial
+            State     = $state
             Product   = $product
             IsNetwork = $serial -match ':\d+$'
         }
@@ -96,17 +100,40 @@ function Set-DisplayPolicy {
     Invoke-Adb @('-s', $Serial, 'shell', 'settings put global wifi_sleep_policy 2') | Out-Null
 }
 
+function Get-RememberedEndpoint {
+    if (-not (Test-Path $EndpointState)) { return $null }
+    $value = ([System.IO.File]::ReadAllText($EndpointState)).Trim()
+    if ($value -match '^\d+\.\d+\.\d+\.\d+:5555$') { return $value }
+    return $null
+}
+
+function Save-RememberedEndpoint {
+    param([string]$Endpoint)
+    New-Item -ItemType Directory -Path $StateDirectory -Force | Out-Null
+    [System.IO.File]::WriteAllText($EndpointState, $Endpoint + [Environment]::NewLine)
+}
+
 function Invoke-LinkPass {
     Invoke-Adb @('start-server') | Out-Null
     $devices = @(Get-Devices)
-    $watches = @($devices | Where-Object { $_.Product -eq $WatchProduct })
+    $watches = @($devices | Where-Object {
+        $_.Product -eq $WatchProduct -and $_.State -eq 'device'
+    })
+    $offlineWatch = $devices | Where-Object {
+        $_.Product -eq $WatchProduct -and $_.State -eq 'offline' -and $_.IsNetwork
+    } | Select-Object -First 1
 
     $usb = $watches | Where-Object { -not $_.IsNetwork } | Select-Object -First 1
     $net = $watches | Where-Object { $_.IsNetwork } | Select-Object -First 1
 
     $ip = $null
     if ($usb) {
-        $ip = Get-WatchIp -Serial $usb.Serial
+        if (-not $NoDisplayPolicy) { Set-DisplayPolicy -Serial $usb.Serial }
+        Invoke-Adb @('-s', $usb.Serial, 'shell', 'svc wifi enable') | Out-Null
+        for ($attempt = 0; $attempt -lt 10 -and -not $ip; $attempt++) {
+            $ip = Get-WatchIp -Serial $usb.Serial
+            if (-not $ip) { Start-Sleep -Seconds 2 }
+        }
         if ($ip) {
             # Re-arming tcpip is harmless when the daemon is already in TCP mode.
             Invoke-Adb @('-s', $usb.Serial, 'tcpip', "$AdbPort") | Out-Null
@@ -114,9 +141,22 @@ function Invoke-LinkPass {
         }
     } elseif ($net) {
         $ip = ($net.Serial -split ':')[0]
+    } elseif ($offlineWatch) {
+        # An offline transport remains in `adb devices` after Wi-Fi sleeps. Keeping that row out
+        # of the candidate set meant the old script never issued the reconnect that could recover
+        # it. Drop the stale transport and redial the same verified OWW221 endpoint.
+        $ip = ($offlineWatch.Serial -split ':')[0]
+        Invoke-Adb @('disconnect', $offlineWatch.Serial) | Out-Null
+    } else {
+        $remembered = Get-RememberedEndpoint
+        if ($remembered) { $ip = ($remembered -split ':')[0] }
     }
 
     if (-not $ip) {
+        if ($usb) {
+            Write-Host 'watch-link: OWW221 USB ADB online; Wi-Fi has no address yet, will retry.'
+            return $true
+        }
         Write-Host 'watch-link: no OWW221 reachable on USB or TCP; nothing to do.'
         return $false
     }
@@ -127,6 +167,15 @@ function Invoke-LinkPass {
         Write-Host "watch-link: connect failed for $endpoint -> $connect"
         return $false
     }
+
+    $model = Invoke-Adb @('-s', $endpoint, 'shell', 'getprop ro.product.model')
+    if ($model -ne $WatchProduct) {
+        Invoke-Adb @('disconnect', $endpoint) | Out-Null
+        Write-Host "watch-link: rejected $endpoint because model '$model' is not $WatchProduct."
+        return $false
+    }
+
+    Save-RememberedEndpoint -Endpoint $endpoint
 
     if (-not $NoDisplayPolicy) { Set-DisplayPolicy -Serial $endpoint }
 

@@ -53,13 +53,42 @@ interface Env extends SyncEnv, OAuthEnv, AuthorityObservationEnv, CloudV3Env {
 
 type JsonRecord = Record<string, unknown>
 
-const PROJECT = { name: 'poyi-watch', version: '0.4.0' }
+const PROJECT = { name: 'poyi-watch', version: '0.5.0' }
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/
 
 type WatchScope = typeof WATCH_SCOPES[number]
 
 const EMPTY_SCHEMA = { type: 'object', properties: {}, additionalProperties: false } as const
 const UUID_SCHEMA = { type: 'string', format: 'uuid' } as const
+const ID_SCHEMA = {
+  type: 'string', minLength: 1, maxLength: 128,
+  pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$',
+} as const
+const STAGE_SCHEMA = {
+  type: 'object',
+  properties: {
+    kind: { type: 'string', enum: ['RUN', 'WALK', 'REST'] },
+    unit: { type: 'string', enum: ['DISTANCE', 'TIME'] },
+    target: { type: 'integer', minimum: 1, maximum: 1_000_000 },
+  },
+  required: ['kind', 'unit', 'target'],
+  additionalProperties: false,
+} as const
+const PLAN_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: ID_SCHEMA,
+    name: { type: 'string', minLength: 1, maxLength: 200 },
+    groupId: { anyOf: [ID_SCHEMA, { type: 'null' }] },
+    requirement: { type: 'string', maxLength: 2_000 },
+    sortOrder: { type: 'integer', minimum: 0 },
+    stages: {
+      type: 'array', minItems: 1, maxItems: 100, items: STAGE_SCHEMA,
+    },
+  },
+  required: ['id', 'name', 'groupId', 'requirement', 'sortOrder', 'stages'],
+  additionalProperties: false,
+} as const
 const COMMON_COMMAND_PROPERTIES = {
   requestId: UUID_SCHEMA,
   commandId: UUID_SCHEMA,
@@ -85,6 +114,7 @@ const TOOLS = [
   { name: 'watch_get_sync_overview', scope: WATCH_READ_SCOPE, description: 'Read V3 device, cursor, freshness, and migration state.', inputSchema: EMPTY_SCHEMA },
   { name: 'watch_list_plan_groups', scope: WATCH_READ_SCOPE, description: 'List cloud-authoritative training plan groups.', inputSchema: EMPTY_SCHEMA },
   { name: 'watch_list_plans', scope: WATCH_READ_SCOPE, description: 'List cloud-authoritative plans and selected plan.', inputSchema: EMPTY_SCHEMA },
+  { name: 'watch_get_plan', scope: WATCH_READ_SCOPE, description: 'Read one cloud-authoritative plan including every ordered workout stage.', inputSchema: { type: 'object', properties: { planId: ID_SCHEMA }, required: ['planId'], additionalProperties: false } },
   { name: 'watch_list_workouts', scope: WATCH_READ_SCOPE, description: 'List workout summaries; routes and per-sample heart rates remain local-only.', inputSchema: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 200 } }, additionalProperties: false } },
   { name: 'watch_get_workout', scope: WATCH_READ_SCOPE, description: 'Read one detailed workout summary, splits, aggregate heart rates, and source summary.', inputSchema: { type: 'object', properties: { workoutId: { type: 'string', minLength: 1, maxLength: 128 } }, required: ['workoutId'], additionalProperties: false } },
   { name: 'watch_summarize_workouts', scope: WATCH_READ_SCOPE, description: 'Summarize workout count, duration, distance, and steps.', inputSchema: EMPTY_SCHEMA },
@@ -92,10 +122,12 @@ const TOOLS = [
   { name: 'watch_get_latest_sleep', scope: WATCH_READ_SCOPE, description: 'Read the latest cloud sleep record.', inputSchema: EMPTY_SCHEMA },
   { name: 'watch_summarize_sleep', scope: WATCH_READ_SCOPE, description: 'Summarize the latest 31 cloud sleep records.', inputSchema: EMPTY_SCHEMA },
   { name: 'watch_upsert_plan_group', scope: WATCH_WRITE_SCOPE, description: 'Create or replace a plan group using expected plan-library revision.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, group: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, sortOrder: { type: 'integer', minimum: 0 } }, required: ['id', 'name', 'sortOrder'], additionalProperties: false } }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'group'], additionalProperties: false } },
-  { name: 'watch_delete_plan_group', scope: WATCH_WRITE_SCOPE, description: 'Delete an empty plan group using expected plan-library revision.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, groupId: { type: 'string' } }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'groupId'], additionalProperties: false } },
-  { name: 'watch_upsert_plan', scope: WATCH_WRITE_SCOPE, description: 'Create or replace a plan using expected plan-library revision.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, plan: { type: 'object' } }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'plan'], additionalProperties: false } },
-  { name: 'watch_delete_plan', scope: WATCH_WRITE_SCOPE, description: 'Delete a plan using expected plan-library revision.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, planId: { type: 'string' } }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'planId'], additionalProperties: false } },
-  { name: 'watch_select_plan', scope: WATCH_WRITE_SCOPE, description: 'Select a cloud plan using expected plan-library revision.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, planId: { type: ['string', 'null'] } }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'planId'], additionalProperties: false } },
+  { name: 'watch_delete_plan_group', scope: WATCH_WRITE_SCOPE, description: 'Delete an empty plan group using expected plan-library revision. A non-empty group is never cascaded.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, groupId: ID_SCHEMA }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'groupId'], additionalProperties: false } },
+  { name: 'watch_upsert_plan', scope: WATCH_WRITE_SCOPE, description: 'Create or replace one plan, including all ordered stages, using expected plan-library revision.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, plan: PLAN_SCHEMA }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'plan'], additionalProperties: false } },
+  { name: 'watch_move_plan', scope: WATCH_WRITE_SCOPE, description: 'Move one existing plan to a plan group or ungrouped position without changing its stages.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, planId: ID_SCHEMA, groupId: { anyOf: [ID_SCHEMA, { type: 'null' }] }, sortOrder: { type: 'integer', minimum: 0 } }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'planId', 'groupId', 'sortOrder'], additionalProperties: false } },
+  { name: 'watch_replace_plan_stages', scope: WATCH_WRITE_SCOPE, description: 'Replace every ordered stage of one existing daily plan.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, planId: ID_SCHEMA, stages: { type: 'array', minItems: 1, maxItems: 100, items: STAGE_SCHEMA } }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'planId', 'stages'], additionalProperties: false } },
+  { name: 'watch_delete_plan', scope: WATCH_WRITE_SCOPE, description: 'Delete exactly one plan by ID using expected plan-library revision. Other plans and groups are unchanged.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, planId: ID_SCHEMA }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'planId'], additionalProperties: false } },
+  { name: 'watch_select_plan', scope: WATCH_WRITE_SCOPE, description: 'Select an existing cloud plan, or null to clear selection, using expected plan-library revision.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, planId: { anyOf: [ID_SCHEMA, { type: 'null' }] } }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'planId'], additionalProperties: false } },
   { name: 'watch_delete_workout', scope: WATCH_WRITE_SCOPE, description: 'Request device-confirmed workout deletion; cloud tombstone is written only after Watch ACK.', inputSchema: { ...COMMAND_SCHEMA, properties: { ...COMMON_COMMAND_PROPERTIES, workoutId: { type: 'string' } }, required: [...COMMAND_SCHEMA.required, 'workoutId'] } },
   { name: 'watch_start_workout', scope: WATCH_CONTROL_SCOPE, description: 'Start a workout and wait up to 10 seconds for Watch ACK.', inputSchema: { ...COMMAND_SCHEMA, properties: { ...COMMON_COMMAND_PROPERTIES, planId: { type: ['string', 'null'] } }, required: [...COMMAND_SCHEMA.required, 'planId'] } },
   { name: 'watch_pause_workout', scope: WATCH_CONTROL_SCOPE, description: 'Pause the active workout and wait up to 10 seconds for Watch ACK.', inputSchema: COMMAND_SCHEMA },
@@ -105,6 +137,91 @@ const TOOLS = [
 ] as const
 
 type ToolName = typeof TOOLS[number]['name']
+
+const zId = z.string().min(1).max(128)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/)
+const zUuid = z.string().uuid()
+const zStage = z.object({
+  kind: z.enum(['RUN', 'WALK', 'REST']),
+  unit: z.enum(['DISTANCE', 'TIME']),
+  target: z.number().int().min(1).max(1_000_000),
+}).strict()
+const zPlan = z.object({
+  id: zId,
+  name: z.string().min(1).max(200),
+  groupId: zId.nullable(),
+  requirement: z.string().max(2_000),
+  sortOrder: z.number().int().nonnegative(),
+  stages: z.array(zStage).min(1).max(100),
+}).strict()
+const zGroup = z.object({
+  id: zId,
+  name: z.string().min(1).max(200),
+  sortOrder: z.number().int().nonnegative(),
+}).strict()
+const writeMeta = {
+  requestId: zUuid,
+  operationId: zUuid,
+  expectedRevision: z.number().int().nonnegative(),
+}
+const commandMeta = {
+  requestId: zUuid,
+  commandId: zUuid,
+  expectedState: z.string().nullable(),
+  controlRevision: z.number().int().nonnegative(),
+}
+
+function toolInputShape(name: ToolName): Record<string, z.ZodType> {
+  switch (name) {
+    case 'watch_get_status':
+    case 'watch_get_sync_overview':
+    case 'watch_list_plan_groups':
+    case 'watch_list_plans':
+    case 'watch_summarize_workouts':
+    case 'watch_get_latest_sleep':
+    case 'watch_summarize_sleep':
+      return {}
+    case 'watch_get_plan':
+      return { planId: zId }
+    case 'watch_list_workouts':
+      return { limit: z.number().int().min(1).max(200).optional() }
+    case 'watch_get_workout':
+      return { workoutId: zId }
+    case 'watch_list_sleep_records':
+      return { limit: z.number().int().min(1).max(31).optional() }
+    case 'watch_upsert_plan_group':
+      return { ...writeMeta, group: zGroup }
+    case 'watch_delete_plan_group':
+      return { ...writeMeta, groupId: zId }
+    case 'watch_upsert_plan':
+      return { ...writeMeta, plan: zPlan }
+    case 'watch_move_plan':
+      return {
+        ...writeMeta,
+        planId: zId,
+        groupId: zId.nullable(),
+        sortOrder: z.number().int().nonnegative(),
+      }
+    case 'watch_replace_plan_stages':
+      return { ...writeMeta, planId: zId, stages: z.array(zStage).min(1).max(100) }
+    case 'watch_delete_plan':
+    case 'watch_select_plan':
+      return {
+        ...writeMeta,
+        planId: name === 'watch_select_plan' ? zId.nullable() : zId,
+      }
+    case 'watch_delete_workout':
+      return { ...commandMeta, workoutId: zId }
+    case 'watch_start_workout':
+      return { ...commandMeta, planId: zId.nullable() }
+    case 'watch_pause_workout':
+    case 'watch_resume_workout':
+    case 'watch_stop_workout':
+      return commandMeta
+    case 'watch_get_command_status':
+      return { commandId: zUuid }
+  }
+}
 
 function text(payload: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] }
@@ -143,6 +260,13 @@ class WatchMcpServer {
         ? { revision: library.revision, groups: library.groups }
         : library)
     }
+    if (name === 'watch_get_plan') {
+      const library = await cloudPlans(this.env.DB)
+      const plan = Array.isArray(library.plans)
+        ? library.plans.find((item) => isRecord(item) && item.id === args.planId) ?? null
+        : null
+      return text({ revision: library.revision, plan })
+    }
     if (name === 'watch_list_workouts') return text(await cloudWorkouts(this.env.DB, Number(args.limit ?? 100)))
     if (name === 'watch_get_workout') {
       return text({ workout: await cloudWorkout(this.env.DB, String(args.workoutId ?? '')) })
@@ -155,7 +279,11 @@ class WatchMcpServer {
     }
     if (name === 'watch_summarize_sleep') return text(await summarizeCloudSleep(this.env.DB))
 
-    if (name.startsWith('watch_') && ['watch_upsert_plan_group', 'watch_delete_plan_group', 'watch_upsert_plan', 'watch_delete_plan', 'watch_select_plan'].includes(name)) {
+    if (name.startsWith('watch_') && [
+      'watch_upsert_plan_group', 'watch_delete_plan_group', 'watch_upsert_plan',
+      'watch_move_plan', 'watch_replace_plan_stages', 'watch_delete_plan',
+      'watch_select_plan',
+    ].includes(name)) {
       const current = await cloudPlans(this.env.DB)
       const groups = Array.isArray(current.groups) ? [...current.groups] as JsonRecord[] : []
       const plans = Array.isArray(current.plans) ? [...current.plans] as JsonRecord[] : []
@@ -171,18 +299,50 @@ class WatchMcpServer {
           return text({ outcome: 'conflict', error: 'group_not_empty', groupId: args.groupId })
         }
         const index = groups.findIndex((group) => group.id === args.groupId)
-        if (index >= 0) groups.splice(index, 1)
+        if (index < 0) {
+          return text({ outcome: 'conflict', error: 'group_not_found', groupId: args.groupId })
+        }
+        groups.splice(index, 1)
       } else if (name === 'watch_upsert_plan') {
         if (!isRecord(args.plan)) throw new Error('invalid_plan')
         const planValue = args.plan
+        if (planValue.groupId !== null
+          && !groups.some((group) => group.id === planValue.groupId)) {
+          return text({ outcome: 'conflict', error: 'group_not_found', groupId: planValue.groupId })
+        }
         const index = plans.findIndex((plan) => plan.id === planValue.id)
         if (index >= 0) plans[index] = planValue
         else plans.push(planValue)
+      } else if (name === 'watch_move_plan') {
+        const index = plans.findIndex((plan) => plan.id === args.planId)
+        if (index < 0) {
+          return text({ outcome: 'conflict', error: 'plan_not_found', planId: args.planId })
+        }
+        if (args.groupId !== null && !groups.some((group) => group.id === args.groupId)) {
+          return text({ outcome: 'conflict', error: 'group_not_found', groupId: args.groupId })
+        }
+        plans[index] = {
+          ...plans[index],
+          groupId: args.groupId,
+          sortOrder: Number(args.sortOrder),
+        }
+      } else if (name === 'watch_replace_plan_stages') {
+        const index = plans.findIndex((plan) => plan.id === args.planId)
+        if (index < 0) {
+          return text({ outcome: 'conflict', error: 'plan_not_found', planId: args.planId })
+        }
+        plans[index] = { ...plans[index], stages: args.stages }
       } else if (name === 'watch_delete_plan') {
         const index = plans.findIndex((plan) => plan.id === args.planId)
-        if (index >= 0) plans.splice(index, 1)
+        if (index < 0) {
+          return text({ outcome: 'conflict', error: 'plan_not_found', planId: args.planId })
+        }
+        plans.splice(index, 1)
         if (selectedPlanId === args.planId) selectedPlanId = null
       } else {
+        if (args.planId !== null && !plans.some((plan) => plan.id === args.planId)) {
+          return text({ outcome: 'conflict', error: 'plan_not_found', planId: args.planId })
+        }
         selectedPlanId = args.planId === null ? null : String(args.planId)
       }
       return text(await replaceCloudPlanLibrary(
@@ -214,18 +374,12 @@ class WatchMcpServer {
   }
 
   private init(): void {
-    const commonInput = {
-      requestId: z.unknown().optional(), commandId: z.unknown().optional(), operationId: z.unknown().optional(),
-      expectedRevision: z.unknown().optional(), expectedState: z.unknown().optional(), controlRevision: z.unknown().optional(),
-      group: z.unknown().optional(), groupId: z.unknown().optional(), plan: z.unknown().optional(),
-      planId: z.unknown().optional(), workoutId: z.unknown().optional(), limit: z.unknown().optional(),
-    }
     for (const definition of TOOLS) {
       this.server.registerTool(
         definition.name,
         {
           description: definition.description,
-          inputSchema: commonInput,
+          inputSchema: toolInputShape(definition.name),
           _meta: { securitySchemes: watchToolSecuritySchemes(definition.scope) },
         },
         async (args) => {

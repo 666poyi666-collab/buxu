@@ -25,16 +25,19 @@ import java.util.Set;
 /** Offline selector for the complete phone-authoritative plan library mirror. */
 public class PlanActivity extends Activity {
     private static final String STATE_DETAIL_PLAN_ID = "detail_plan_id";
+    private static final String STATE_GROUP_ID = "group_id";
 
     private final PlanSelectionUiPolicy navigation = new PlanSelectionUiPolicy();
     private FrameLayout pageHost;
     private JSONObject library = new JSONObject();
     private Set<String> availablePlanIds = new HashSet<>();
+    private String openGroupId = "";
     private boolean selectionInProgress;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         if (state != null) {
+            openGroupId = state.getString(STATE_GROUP_ID, "");
             String restoredPlanId = state.getString(STATE_DETAIL_PLAN_ID, "");
             if (!restoredPlanId.isEmpty()) navigation.openDetails(restoredPlanId);
         }
@@ -57,12 +60,14 @@ public class PlanActivity extends Activity {
         if (navigation.screen() == PlanSelectionUiPolicy.Screen.DETAIL) {
             state.putString(STATE_DETAIL_PLAN_ID, navigation.detailPlanId());
         }
+        state.putString(STATE_GROUP_ID, openGroupId);
     }
 
     private void reloadProjection() {
         library = PlanLibraryStore.load(this);
         availablePlanIds = planIds(library);
         navigation.reconcile(availablePlanIds);
+        if (!openGroupId.isEmpty() && !groupExists(openGroupId)) openGroupId = "";
         renderPage();
     }
 
@@ -70,15 +75,18 @@ public class PlanActivity extends Activity {
         pageHost.removeAllViews();
         View page = navigation.screen() == PlanSelectionUiPolicy.Screen.DETAIL
                 ? buildDetailPage(findPlan(navigation.detailPlanId()))
-                : buildListPage();
+                : openGroupId.isEmpty() ? buildListPage() : buildGroupPage(openGroupId);
         pageHost.addView(page, new FrameLayout.LayoutParams(-1, -1));
     }
 
     private View buildListPage() {
         LinearLayout page = basePage();
         int planCount = availablePlanIds.size();
+        int groupCount = library.optJSONArray("groups") == null
+                ? 0 : library.optJSONArray("groups").length();
         page.addView(header("训练计划",
-                planCount == 0 ? "等待手机同步" : planCount + " 个 · 离线可用",
+                planCount == 0 ? "等待手机同步"
+                        : groupCount + " 个分组 · " + planCount + " 个安排",
                 this::finish, "返回主页"));
 
         ScrollView scroll = new ScrollView(this);
@@ -87,7 +95,36 @@ public class PlanActivity extends Activity {
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         if (planCount == 0) renderEmptyLibrary(content);
-        else renderLibrary(content);
+        else renderGroupIndex(content);
+        scroll.addView(content, new ScrollView.LayoutParams(-1, -2));
+        page.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        return page;
+    }
+
+    private View buildGroupPage(String groupId) {
+        String groupName = groupId.equals("__ungrouped__")
+                ? "未分组" : PlanLibraryStore.groupName(library, groupId);
+        ArrayList<JSONObject> plans = plansForGroup(groupId);
+        LinearLayout page = basePage();
+        page.addView(header(groupName, plans.size() + " 个安排 · 离线可用",
+                () -> { openGroupId = ""; renderPage(); }, "返回分组列表"));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(false);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        if (plans.isEmpty()) {
+            TextView empty = Ui.text(this, "这个分组还没有安排", 14, Ui.MUTED);
+            empty.setGravity(Gravity.CENTER);
+            content.addView(empty, new LinearLayout.LayoutParams(-1, Ui.dp(this, 96)));
+        } else {
+            for (JSONObject plan : plans) content.addView(planCard(plan));
+        }
+        TextView source = Ui.text(this, "由手机或 ChatGPT 管理 · 自动同步",
+                Ui.CAPTION, Ui.MUTED);
+        source.setGravity(Gravity.CENTER);
+        content.addView(source, new LinearLayout.LayoutParams(-1, Ui.dp(this, 32)));
         scroll.addView(content, new ScrollView.LayoutParams(-1, -2));
         page.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         return page;
@@ -105,7 +142,7 @@ public class PlanActivity extends Activity {
         boolean selected = plan.optString("id").equals(library.optString("selectedPlanId"));
         LinearLayout page = basePage();
         page.addView(header("计划详情", groupName,
-                () -> { navigation.showList(); renderPage(); }, "返回计划列表"));
+                () -> { navigation.showList(); renderPage(); }, "返回当前分组"));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -131,7 +168,7 @@ public class PlanActivity extends Activity {
         copyParams.leftMargin = Ui.dp(this, 10);
         identity.addView(copy, copyParams);
         if (selected) identity.addView(Ui.chip(this, "当前", Ui.LIME,
-                Color.rgb(30, 48, 14)),
+                Ui.TINT_LIME),
                 new LinearLayout.LayoutParams(Ui.dp(this, 54), Ui.dp(this, 24)));
         identityCard.addView(identity, new LinearLayout.LayoutParams(-1, -2));
 
@@ -172,7 +209,7 @@ public class PlanActivity extends Activity {
         scroll.addView(content, new ScrollView.LayoutParams(-1, -2));
         page.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        TextView select = Ui.action(this, "设为当前", 17, Ui.BLACK, Ui.LIME);
+        TextView select = Ui.iconAction(this, "设为当前", 17, Ui.BLACK, Ui.LIME, Ui.Symbol.CHECK);
         select.setContentDescription("将“" + plan.optString("name", "训练计划")
                 + "”设为当前训练计划");
         boolean canSelect = navigation.canSelect(availablePlanIds) && !stages.isEmpty();
@@ -181,7 +218,7 @@ public class PlanActivity extends Activity {
         select.setOnClickListener(v -> applySelection(select, plan.optString("id"),
                 plan.optString("name", "训练计划")));
         LinearLayout.LayoutParams selectParams =
-                new LinearLayout.LayoutParams(-1, Ui.dp(this, 48));
+                new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.ACTION_PRIMARY));
         selectParams.topMargin = Ui.dp(this, 8);
         page.addView(select, selectParams);
 
@@ -190,6 +227,133 @@ public class PlanActivity extends Activity {
         hint.setGravity(Gravity.CENTER);
         page.addView(hint, new LinearLayout.LayoutParams(-1, Ui.dp(this, 24)));
         return page;
+    }
+
+    private void renderGroupIndex(LinearLayout target) {
+        JSONArray groups = library.optJSONArray("groups");
+        if (groups != null) for (int index = 0; index < groups.length(); index++) {
+            JSONObject group = groups.optJSONObject(index);
+            if (group == null) continue;
+            ArrayList<JSONObject> plans = plansForGroup(group.optString("id"));
+            target.addView(groupCard(
+                    group.optString("id"), group.optString("name", "未命名分组"), plans));
+        }
+        ArrayList<JSONObject> ungrouped = plansForGroup("__ungrouped__");
+        if (!ungrouped.isEmpty()) {
+            target.addView(groupCard("__ungrouped__", "未分组", ungrouped));
+        }
+        TextView source = Ui.text(this, "先选择分组，再选择当天安排",
+                Ui.CAPTION, Ui.MUTED);
+        source.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams sourceParams =
+                new LinearLayout.LayoutParams(-1, Ui.dp(this, 34));
+        sourceParams.topMargin = Ui.dp(this, 4);
+        target.addView(source, sourceParams);
+    }
+
+    private View groupCard(String groupId, String name, ArrayList<JSONObject> plans) {
+        boolean containsSelected = false;
+        String selectedName = "";
+        String selectedId = library.optString("selectedPlanId");
+        for (JSONObject plan : plans) {
+            if (selectedId.equals(plan.optString("id"))) {
+                containsSelected = true;
+                selectedName = plan.optString("name");
+                break;
+            }
+        }
+        LinearLayout card = new LinearLayout(this);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(Ui.dp(this, 14), Ui.dp(this, 8),
+                Ui.dp(this, 12), Ui.dp(this, 8));
+        card.setBackground(new RippleDrawable(
+                ColorStateList.valueOf(Color.argb(52, 255, 255, 255)),
+                Ui.outlinedBackground(this,
+                        containsSelected ? Ui.PANEL_ACTIVE : Ui.PANEL,
+                        containsSelected ? Ui.LIME : Ui.LINE, Ui.RADIUS_CARD),
+                Ui.background(this, Color.WHITE, Ui.RADIUS_CARD)));
+
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        TextView title = Ui.bold(this, name, 17,
+                containsSelected ? Ui.LIME : Ui.WHITE);
+        copy.addView(title, new LinearLayout.LayoutParams(-1, Ui.dp(this, 26)));
+        String detail = plans.size() + " 个安排";
+        if (containsSelected && !selectedName.isEmpty()) detail += " · 当前 " + selectedName;
+        TextView meta = Ui.text(this, detail, Ui.CAPTION, Ui.MUTED);
+        copy.addView(meta, new LinearLayout.LayoutParams(-1, Ui.dp(this, 20)));
+        card.addView(copy, new LinearLayout.LayoutParams(0, -1, 1));
+
+        TextView chevron = Ui.text(this, "", Ui.BODY, Ui.MUTED);
+        Ui.setActionSymbol(this, chevron, Ui.Symbol.FORWARD, Ui.MUTED);
+        chevron.setGravity(Gravity.CENTER);
+        chevron.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        card.addView(chevron, new LinearLayout.LayoutParams(Ui.dp(this, 24), -1));
+        card.setClickable(true);
+        card.setFocusable(true);
+        card.setContentDescription(name + "，" + detail + "，查看分组");
+        Ui.pressable(card);
+        card.setOnClickListener(v -> {
+            openGroupId = groupId;
+            renderPage();
+        });
+        LinearLayout.LayoutParams params =
+                new LinearLayout.LayoutParams(-1, Ui.dp(this, 62));
+        params.bottomMargin = Ui.dp(this, 8);
+        card.setLayoutParams(params);
+        return card;
+    }
+
+    private ArrayList<JSONObject> plansForGroup(String groupId) {
+        ArrayList<JSONObject> result = new ArrayList<>();
+        JSONArray plans = library.optJSONArray("plans");
+        if (plans == null) return result;
+        boolean ungrouped = "__ungrouped__".equals(groupId);
+        for (int index = 0; index < plans.length(); index++) {
+            JSONObject plan = plans.optJSONObject(index);
+            if (plan == null) continue;
+            String candidate = plan.optString("groupId");
+            if (ungrouped ? candidate.isEmpty() || !groupExists(candidate)
+                    : groupId.equals(candidate)) result.add(plan);
+        }
+        result.sort((first, second) -> Integer.compare(
+                first.optInt("sortOrder", Integer.MAX_VALUE),
+                second.optInt("sortOrder", Integer.MAX_VALUE)));
+        return result;
+    }
+
+    private boolean groupExists(String groupId) {
+        if ("__ungrouped__".equals(groupId)) return !plansForUnknownGroup().isEmpty();
+        JSONArray groups = library.optJSONArray("groups");
+        if (groups == null) return false;
+        for (int index = 0; index < groups.length(); index++) {
+            JSONObject group = groups.optJSONObject(index);
+            if (group != null && groupId.equals(group.optString("id"))) return true;
+        }
+        return false;
+    }
+
+    private ArrayList<JSONObject> plansForUnknownGroup() {
+        ArrayList<JSONObject> result = new ArrayList<>();
+        JSONArray plans = library.optJSONArray("plans");
+        if (plans == null) return result;
+        for (int index = 0; index < plans.length(); index++) {
+            JSONObject plan = plans.optJSONObject(index);
+            if (plan == null) continue;
+            String groupId = plan.optString("groupId");
+            if (groupId.isEmpty() || !knownGroupId(groupId)) result.add(plan);
+        }
+        return result;
+    }
+
+    private boolean knownGroupId(String groupId) {
+        JSONArray groups = library.optJSONArray("groups");
+        if (groups == null) return false;
+        for (int index = 0; index < groups.length(); index++) {
+            JSONObject group = groups.optJSONObject(index);
+            if (group != null && groupId.equals(group.optString("id"))) return true;
+        }
+        return false;
     }
 
     private void renderLibrary(LinearLayout target) {
@@ -252,7 +416,7 @@ public class PlanActivity extends Activity {
                 ColorStateList.valueOf(Color.argb(52, 255, 255, 255)),
                 Ui.outlinedBackground(this, selected ? Ui.PANEL_ACTIVE : Ui.PANEL,
                         selected ? Ui.LIME : Ui.LINE, 18),
-                Ui.background(this, Color.WHITE, 18)));
+                Ui.background(this, Color.WHITE, Ui.RADIUS_CARD)));
         card.addView(Ui.workoutGlyph(this, selected ? Ui.LIME : Ui.MUTED),
                 new LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 36)));
 
@@ -270,9 +434,10 @@ public class PlanActivity extends Activity {
         card.addView(copy, copyParams);
 
         if (selected) card.addView(Ui.chip(this, "当前", Ui.LIME,
-                Color.rgb(30, 48, 14)),
+                Ui.TINT_LIME),
                 new LinearLayout.LayoutParams(Ui.dp(this, 54), Ui.dp(this, 24)));
-        TextView chevron = Ui.text(this, "›", 24, Ui.MUTED);
+        TextView chevron = Ui.text(this, "", Ui.BODY, Ui.MUTED);
+        Ui.setActionSymbol(this, chevron, Ui.Symbol.FORWARD, Ui.MUTED);
         chevron.setGravity(Gravity.CENTER);
         chevron.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         card.addView(chevron, new LinearLayout.LayoutParams(Ui.dp(this, 18), -1));
@@ -287,7 +452,7 @@ public class PlanActivity extends Activity {
             renderPage();
         });
         LinearLayout.LayoutParams params =
-                new LinearLayout.LayoutParams(-1, Ui.dp(this, 68));
+                new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.LIST_ROW));
         params.bottomMargin = Ui.dp(this, 7);
         card.setLayoutParams(params);
         return card;
@@ -307,7 +472,8 @@ public class PlanActivity extends Activity {
         message.setMaxLines(2);
         empty.addView(message, new LinearLayout.LayoutParams(-1, Ui.dp(this, 44)));
 
-        TextView unavailable = Ui.action(this, "暂无可选计划", 15, Ui.MUTED, Ui.PANEL_ACTIVE);
+        TextView unavailable = Ui.iconAction(this, "暂无可选计划", 15, Ui.MUTED,
+                Ui.PANEL_ACTIVE, Ui.Symbol.LIST);
         unavailable.setEnabled(false);
         unavailable.setAlpha(.42f);
         unavailable.setContentDescription("暂无可选计划，请先在手机端添加并同步");
@@ -413,7 +579,16 @@ public class PlanActivity extends Activity {
     }
 
     @Override public void onBackPressed() {
-        if (navigation.consumeBack() == PlanSelectionUiPolicy.BackAction.SHOW_LIST) renderPage();
-        else finish();
+        if (navigation.screen() == PlanSelectionUiPolicy.Screen.DETAIL) {
+            navigation.showList();
+            renderPage();
+            return;
+        }
+        if (!openGroupId.isEmpty()) {
+            openGroupId = "";
+            renderPage();
+            return;
+        }
+        finish();
     }
 }

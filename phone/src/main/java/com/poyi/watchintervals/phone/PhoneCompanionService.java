@@ -39,6 +39,6 @@ public final class PhoneCompanionService extends Service {
             projectionDrainInFlight.set(false);if(!destroyed.get())PhonePlanProjectionWorker.schedule(this);
         }
     }
-    @Override public void onDestroy(){destroyed.set(true);syncHandler.removeCallbacks(statusUpload);if(watchConnection!=null)watchConnection.removeObserver(projectionObserver);projectionExecutor.shutdownNow();if(cloudChannel!=null)cloudChannel.stop();super.onDestroy();}
+    @Override public void onDestroy(){destroyed.set(true);syncHandler.removeCallbacks(statusUpload);if(watchConnection!=null)watchConnection.removeObserver(projectionObserver);projectionExecutor.shutdownNow();if(cloudChannel!=null)cloudChannel.stop();PhoneBootReceiver.schedule(this);super.onDestroy();}
     @Override public IBinder onBind(Intent intent){return null;}
 }

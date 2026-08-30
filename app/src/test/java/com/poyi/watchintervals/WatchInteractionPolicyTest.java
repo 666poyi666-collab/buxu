@@ -74,7 +74,7 @@ public class WatchInteractionPolicyTest {
         assertFalse(main.contains("FLAG_KEEP_SCREEN_ON"));
         assertFalse(main.contains("FLAG_TURN_SCREEN_ON"));
         assertFalse(main.contains("FLAG_SHOW_WHEN_LOCKED"));
-        assertTrue(training.contains("FLAG_KEEP_SCREEN_ON"));
+        assertFalse(training.contains("FLAG_KEEP_SCREEN_ON"));
         assertTrue(main.contains("WorkoutService.hasRecoverableSession(this)"));
         assertTrue(main.contains("TrainingActivity.EXTRA_PREPARED_SESSION"));
     }

@@ -6,10 +6,10 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 
 /** Presentation rules for the phone plan library and editor. */
-final class PhonePlanUiModel {
+public final class PhonePlanUiModel {
     private PhonePlanUiModel() {}
 
-    static String summary(JSONArray stages) {
+    public static String summary(JSONArray stages) {
         if (stages == null || stages.length() == 0) return "暂无训练内容";
         long meters = 0L;
         long seconds = 0L;
@@ -27,7 +27,7 @@ final class PhonePlanUiModel {
         return join(" · ", pieces);
     }
 
-    static String compactSequence(JSONArray stages) {
+    public static String compactSequence(JSONArray stages) {
         if (stages == null || stages.length() == 0) return "还没有训练阶段";
         int repeatUnit = repeatingUnit(stages);
         int shown = repeatUnit > 0 ? repeatUnit : Math.min(4, stages.length());
@@ -41,26 +41,26 @@ final class PhonePlanUiModel {
         return shown < stages.length() ? result + "  →  另 " + (stages.length() - shown) + " 阶段" : result;
     }
 
-    static String stageLabel(JSONObject stage) {
+    public static String stageLabel(JSONObject stage) {
         if (stage == null) return "未知阶段";
         String kind = kindName(stage.optString("kind"));
         int target = Math.max(1, stage.optInt("target", 1));
         return kind + " " + targetLabel(stage.optString("unit"), target);
     }
 
-    static String kindName(String kind) {
+    public static String kindName(String kind) {
         if ("WALK".equals(kind)) return "快走";
         if ("REST".equals(kind)) return "休息";
         return "跑步";
     }
 
-    static String nextKind(String kind) {
+    public static String nextKind(String kind) {
         if ("RUN".equals(kind)) return "WALK";
         if ("WALK".equals(kind)) return "REST";
         return "RUN";
     }
 
-    static int defaultTarget(String kind, String unit) {
+    public static int defaultTarget(String kind, String unit) {
         if ("TIME".equals(unit)) {
             if ("REST".equals(kind)) return 60;
             if ("WALK".equals(kind)) return 120;
@@ -70,12 +70,12 @@ final class PhonePlanUiModel {
     }
 
     /** Unit changes reset to a meaningful target; preserving 1000 as seconds was destructive. */
-    static int convertedTarget(String kind, String fromUnit, String toUnit, int current) {
+    public static int convertedTarget(String kind, String fromUnit, String toUnit, int current) {
         if (fromUnit != null && fromUnit.equals(toUnit)) return Math.max(1, current);
         return defaultTarget(kind, toUnit);
     }
 
-    static String normalizedUnit(String kind, String requestedUnit) {
+    public static String normalizedUnit(String kind, String requestedUnit) {
         return "REST".equals(kind) ? "TIME"
                 : "DISTANCE".equals(requestedUnit) ? "DISTANCE" : "TIME";
     }

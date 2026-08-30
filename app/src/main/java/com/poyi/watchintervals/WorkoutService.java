@@ -6,8 +6,10 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -19,6 +21,7 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
+import android.graphics.PixelFormat;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.CancellationSignal;
@@ -29,11 +32,22 @@ import android.os.PowerManager;
 import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.provider.Settings;
 import android.util.Base64;
+import android.view.Gravity;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.Locale;
 
 public class WorkoutService extends Service implements LocationListener, SensorEventListener {
+    /**
+     * 屏幕点亮后恢复训练界面的最短间隔。抬手亮屏和误触会连续触发 ACTION_SCREEN_ON,
+     * 没有节流会在几秒内反复把同一个 Activity 提到前台。
+     */
+    private static final long SURFACE_RESTORE_THROTTLE_MILLIS = 2_000L;
     public static final String ACTION_START = "com.poyi.watchintervals.START";
     public static final String ACTION_PREPARE = "com.poyi.watchintervals.PREPARE";
     public static final String ACTION_BEGIN = "com.poyi.watchintervals.BEGIN";
@@ -47,7 +61,9 @@ public class WorkoutService extends Service implements LocationListener, SensorE
     public static final String EXTRA_INITIAL_LOCATION = "com.poyi.watchintervals.INITIAL_LOCATION";
     public static final String EXTRA_INITIAL_HEART_RATE = "com.poyi.watchintervals.INITIAL_HEART_RATE";
     private static final String CHANNEL = "active_workout";
+    private static final String SURFACE_CHANNEL = "active_workout_surface_v1";
     private static final int NOTIFICATION_ID = 42;
+    private static final int SURFACE_NOTIFICATION_ID = 43;
     private static final String SESSION_PREF = "active_session"; // Legacy schema 2 recovery only.
     private static final float MAX_GPS_ACQUISITION_ACCURACY_METERS = 200f;
     private static final float MAX_GPS_TRACKING_ACCURACY_METERS = 150f;
@@ -83,6 +99,7 @@ public class WorkoutService extends Service implements LocationListener, SensorE
     private double planDistanceMeters = 0, freeRecordingDistanceMeters = 0;
     private boolean stageGpsReady = false;
     private boolean gpsPermissionGranted, gpsProviderEnabled, gpsUpdatesRegistered, gnssStatusRegistered;
+    private long requestedLocationIntervalMillis = -1L;
     private boolean heartSensorAvailable, heartSensorRegistered, heartPermissionGranted;
     private boolean stepSensorAvailable, stepSensorRegistered, stepDetectorRegistered, activityRecognitionPermissionGranted;
     private long lastGpsFixElapsed = 0, lastTrackableGpsElapsed = 0;
@@ -92,6 +109,8 @@ public class WorkoutService extends Service implements LocationListener, SensorE
     private int sessionSteps = 0;
     private int gpsSatelliteCount = 0, gpsSatellitesUsed = 0;
     private long lastCheckpoint = 0;
+    /** Countdown is owned by the service so Activity recreation or screen-off cannot restart it. */
+    private long preparationCountdownEndsElapsed;
     private Location lastLocation;
     private Location latestGpsLocation;
     private final ArrayList<Location> routePoints = new ArrayList<>();
@@ -127,9 +146,57 @@ public class WorkoutService extends Service implements LocationListener, SensorE
     private long lastSystemMetricElapsed, lastSystemDistanceElapsed;
     private PowerManager.WakeLock wakeLock;
     private CancellationSignal currentLocationSignal;
+    private CancellationSignal networkLocationSignal;
+    private long lastSingleFixRequestElapsed;
+    private final Runnable finishPreparationCountdown = new Runnable() {
+        @Override public void run() {
+            synchronized (WorkoutService.this) {
+                if (!preparing || preparationCountdownEndsElapsed <= 0L) return;
+                long remaining = WorkoutPreparationPolicy.remainingMillis(
+                        preparationCountdownEndsElapsed, SystemClock.elapsedRealtime());
+                if (remaining > 0L) {
+                    clockHandler.postDelayed(this, Math.min(100L, remaining));
+                    return;
+                }
+                preparationCountdownEndsElapsed = 0L;
+            }
+            // A visible WarmupActivity owns the normal hand-off. If the screen is off,
+            // ACTION_SCREEN_ON restores the already-running TrainingActivity instead.
+            // Keeping those paths separate prevents two activities racing at GO.
+            beginWorkout();
+        }
+    };
+
+    /**
+     * 屏幕熄灭后点亮时把训练界面带回前台。
+     *
+     * 手表熄屏只会让 TrainingActivity 走到 onStop,训练本身由前台服务继续跑。但部分
+     * Wear/ColorOS 省电策略在熄屏后不再把应用恢复到前台,点亮后停在表盘,用户必须手动
+     * 重开应用。这里由唯一权威的服务在屏幕点亮时把训练界面拉回来,训练数据不受影响。
+     * 屏幕反复开关会连续广播,因此加了最短间隔,避免抖动式反复启动。
+     */
+    private final BroadcastReceiver screenStateReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
+                screenWasOff = true;
+            } else if (Intent.ACTION_SCREEN_ON.equals(intent.getAction()) && screenWasOff) {
+                screenWasOff = false;
+                restoreTrainingSurface();
+            }
+        }
+    };
+    private boolean screenReceiverRegistered;
+    private volatile boolean screenWasOff;
+    private long lastSurfaceRestoreAt;
+    private WindowManager surfaceWindowManager;
+    private View surfaceRestoreOverlay;
+    private Runnable automaticSurfaceRestore;
     private final Handler clockHandler = new Handler(Looper.getMainLooper());
     private ToneGenerator cueTone;
     private final Runnable releaseCueTone = this::releaseCueTone;
+    private WorkoutVoiceSpeaker voiceSpeaker;
+    private Runnable pendingVoiceCue;
+    private int preannouncedStageIndex = -1;
     private final GnssStatus.Callback gnssStatusCallback = new GnssStatus.Callback() {
         @Override public void onStarted() {
             synchronized (WorkoutService.this) { gpsProviderEnabled = true; }
@@ -154,8 +221,17 @@ public class WorkoutService extends Service implements LocationListener, SensorE
                 if (running) {
                     tick();
                 }
+                long now = SystemClock.elapsedRealtime();
+                expireSingleFixRequests(now);
+                boolean requestInFlight = currentLocationSignal != null
+                        || networkLocationSignal != null;
+                if (WorkoutPreparationPolicy.shouldRetrySingleFix(
+                        preparing || (running && !paused), hasLiveGpsFix(), requestInFlight,
+                        lastSingleFixRequestElapsed, now)) {
+                    requestSingleFixCandidates();
+                }
             }
-            clockHandler.postDelayed(this, 500L);
+            clockHandler.postDelayed(this, 1_000L);
         }
     };
 
@@ -233,7 +309,16 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         super.onCreate();
         activeInstance = this;
         NotificationChannel channel = new NotificationChannel(CHANNEL, "正在训练", NotificationManager.IMPORTANCE_LOW);
-        getSystemService(NotificationManager.class).createNotificationChannel(channel);
+        NotificationManager notifications = getSystemService(NotificationManager.class);
+        notifications.createNotificationChannel(channel);
+        NotificationChannel surfaceChannel = new NotificationChannel(
+                SURFACE_CHANNEL, "亮屏返回训练", NotificationManager.IMPORTANCE_HIGH);
+        surfaceChannel.setDescription("仅在训练中点亮屏幕时返回实时训练界面");
+        surfaceChannel.setSound(null, null);
+        surfaceChannel.enableVibration(false);
+        surfaceChannel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+        notifications.createNotificationChannel(surfaceChannel);
+        voiceSpeaker = new WorkoutVoiceSpeaker(this);
         locationManager = getSystemService(LocationManager.class);
         sensorManager = getSystemService(SensorManager.class);
         systemExerciseBridge = new SystemExerciseBridge(this, new SystemExerciseBridge.Listener() {
@@ -304,6 +389,84 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         onLocationChanged(location);
     }
 
+    /**
+     * 训练进行期间监听屏幕点亮。只在真正有训练时注册,训练结束或服务销毁即注销,
+     * 避免空闲时无谓持有接收器。
+     */
+    private synchronized void registerScreenObserver() {
+        if (screenReceiverRegistered) return;
+        try {
+            IntentFilter filter = new IntentFilter();
+            filter.addAction(Intent.ACTION_SCREEN_OFF);
+            filter.addAction(Intent.ACTION_SCREEN_ON);
+            registerReceiver(screenStateReceiver, filter);
+            screenReceiverRegistered = true;
+            PowerManager power = getSystemService(PowerManager.class);
+            screenWasOff = power != null && !power.isInteractive();
+        } catch (Exception ignored) {
+            screenReceiverRegistered = false;
+            screenWasOff = false;
+        }
+    }
+
+    private synchronized void unregisterScreenObserver() {
+        if (!screenReceiverRegistered) return;
+        try {
+            unregisterReceiver(screenStateReceiver);
+        } catch (Exception ignored) {
+            // 接收器已随进程或组件注销,忽略即可。
+        }
+        screenReceiverRegistered = false;
+        screenWasOff = false;
+    }
+
+    /**
+     * 把训练界面带回前台。OWW221 会拒绝前台 Service 和普通 alarm 直接启动界面,
+     * 因此使用 Android 的 full-screen notification 投递 Activity PendingIntent。
+     * 通道静音无振动、5 秒自动消失,而且只在用户主动点亮屏幕后发布一次。
+     */
+    private synchronized void restoreTrainingSurface() {
+        if (!running && !preparing) return;
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastSurfaceRestoreAt < SURFACE_RESTORE_THROTTLE_MILLIS) return;
+        lastSurfaceRestoreAt = now;
+        try {
+            boolean restorePreparation = preparing && !running;
+            Intent open = new Intent(this,
+                    restorePreparation ? WarmupActivity.class : TrainingActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                            | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            if (restorePreparation) {
+                open.putExtra("plan", PlanStore.encode(stages));
+            } else {
+                open.putExtra(TrainingActivity.EXTRA_PREPARED_SESSION, true);
+            }
+            if (Settings.canDrawOverlays(this)) {
+                showSurfaceRestoreOverlay(open, restorePreparation);
+                return;
+            }
+            PendingIntent surface = PendingIntent.getActivity(this,
+                    restorePreparation ? 4301 : 4302, open,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            Notification returnToWorkout = new Notification.Builder(this, SURFACE_CHANNEL)
+                    .setSmallIcon(R.drawable.ic_workout_notification)
+                    .setContentTitle(restorePreparation ? "继续训练准备" : "训练进行中")
+                    .setContentText("返回实时训练界面")
+                    .setCategory(Notification.CATEGORY_ALARM)
+                    .setVisibility(Notification.VISIBILITY_PUBLIC)
+                    .setContentIntent(surface)
+                    .setFullScreenIntent(surface, true)
+                    .setAutoCancel(true)
+                    .setTimeoutAfter(5_000L)
+                    .build();
+            getSystemService(NotificationManager.class)
+                    .notify(SURFACE_NOTIFICATION_ID, returnToWorkout);
+        } catch (Exception ignored) {
+            // 用户仍可从 ongoing workout 通知进入同一界面。
+        }
+    }
+
     private synchronized void startNewWorkout(Intent intent) {
         boolean restored = restoreSession();
         if (!restored) {
@@ -317,6 +480,7 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         }
         lastTick = SystemClock.elapsedRealtime();
         startForeground(NOTIFICATION_ID, notification());
+        registerScreenObserver();
         startSensors();
         systemExerciseBridge.start();
         systemGpsBridge.start();
@@ -327,15 +491,39 @@ public class WorkoutService extends Service implements LocationListener, SensorE
 
     private synchronized void startPreparation(Intent intent) {
         if (running || preparing) return;
+        clockHandler.removeCallbacks(finishPreparationCountdown);
+        preparationCountdownEndsElapsed = 0L;
         resetSession();
         stages = decodePlan(intent);
         if (stages.isEmpty()) { stopSelf(); return; }
         preparing = true;
         startForeground(NOTIFICATION_ID, notification());
+        registerScreenObserver();
         startSensors();
         systemExerciseBridge.prepare();
         systemGpsBridge.start();
         getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, notification());
+    }
+
+    /** Starts one service-owned 3-second countdown. Repeated taps join the same countdown. */
+    public synchronized boolean startPreparationCountdown() {
+        if (!preparing || stages.isEmpty()) return false;
+        if (preparationCountdownEndsElapsed > 0L) return true;
+        preparationCountdownEndsElapsed = SystemClock.elapsedRealtime()
+                + WorkoutPreparationPolicy.COUNTDOWN_MILLIS;
+        clockHandler.removeCallbacks(finishPreparationCountdown);
+        clockHandler.post(finishPreparationCountdown);
+        return true;
+    }
+
+    public synchronized long preparationCountdownRemainingMs() {
+        return WorkoutPreparationPolicy.remainingMillis(
+                preparationCountdownEndsElapsed, SystemClock.elapsedRealtime());
+    }
+
+    public synchronized void cancelPreparationCountdown() {
+        preparationCountdownEndsElapsed = 0L;
+        clockHandler.removeCallbacks(finishPreparationCountdown);
     }
 
     private ArrayList<Stage> decodePlan(Intent intent) {
@@ -394,6 +582,7 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         lastDistanceSource = ""; accuracyTotal = 0; accuracySamples = 0; accuracyMinimum = Float.MAX_VALUE; accuracyMaximum = 0;
         while (completedStageResults.length() > 0) completedStageResults.remove(0);
         lastRecordedHeartAt = 0;
+        preannouncedStageIndex = -1;
     }
 
     private void applyWarmupData(Intent intent) {
@@ -416,6 +605,8 @@ public class WorkoutService extends Service implements LocationListener, SensorE
 
     public synchronized boolean beginWorkout() {
         if (!preparing || stages.isEmpty()) return false;
+        preparationCountdownEndsElapsed = 0L;
+        clockHandler.removeCallbacks(finishPreparationCountdown);
         stageIndex = 0;
         totalMeters = 0;
         stageMeters = 0;
@@ -429,11 +620,14 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         liveStats = new LiveWorkoutStats();
         openNewFileStore();
         lastTick = SystemClock.elapsedRealtime();
+        requestLocationUpdatesForCurrentMode();
         resetStageGpsBaseline();
         lastSystemDistanceTotal = Double.NaN;
         systemExerciseDistanceActive = false;
         systemExerciseBridge.start();
         startForeground(NOTIFICATION_ID, notification());
+        acquireWorkoutWakeLock();
+        registerScreenObserver();
         announceStage();
         saveSession(true);
         return true;
@@ -441,7 +635,9 @@ public class WorkoutService extends Service implements LocationListener, SensorE
 
     public synchronized void cancelPreparation() {
         if (!preparing || running) return;
+        cancelPreparationCountdown();
         preparing = false;
+        unregisterScreenObserver();
         systemExerciseBridge.end();
         systemGpsBridge.stop();
         stopSensors();
@@ -724,28 +920,16 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         if (gpsPermissionGranted && gpsProviderEnabled) {
             try {
                 Location cached = newestLocation(
-                        locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER),
-                        locationManager.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER));
+                        newestLocation(
+                                locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER),
+                                locationManager.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)),
+                        locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER));
                 if (isFreshCachedGpsLocation(cached)) seedCachedGpsLocation(cached);
             } catch (SecurityException | IllegalArgumentException ignored) { /* A cache is only a warm-start hint. */ }
-            try {
-                // A one-second route cadence matches the visible sports metrics while avoiding
-                // duplicate sub-second points and unnecessary GNSS wakeups on this watch.
-                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, this, Looper.getMainLooper());
-                // System health and sports components also publish their accepted
-                // fixes through the passive provider.  Subscribe to both sources;
-                // route de-duplication below collapses identical GPS/passive points.
-                locationManager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER, 1000L, 0f, this, Looper.getMainLooper());
-                gpsUpdatesRegistered = true;
-            } catch (SecurityException | IllegalArgumentException ignored) { gpsUpdatesRegistered = false; }
+            requestLocationUpdatesForCurrentMode();
             try { gnssStatusRegistered = locationManager.registerGnssStatusCallback(gnssStatusCallback, clockHandler); }
             catch (SecurityException | IllegalArgumentException ignored) { gnssStatusRegistered = false; }
-            try {
-                currentLocationSignal = new CancellationSignal();
-                locationManager.getCurrentLocation(LocationManager.GPS_PROVIDER, currentLocationSignal, getMainExecutor(), location -> {
-                    if (location != null) onLocationChanged(location);
-                });
-            } catch (SecurityException | IllegalArgumentException ignored) { currentLocationSignal = null; }
+            requestSingleFixCandidates();
         }
         Sensor heart = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE);
         heartSensorAvailable = heart != null;
@@ -766,7 +950,164 @@ public class WorkoutService extends Service implements LocationListener, SensorE
                 stepDetectorRegistered = stepSensorRegistered;
             }
         }
-        if (!wakeLock.isHeld()) wakeLock.acquire(4 * 60 * 60 * 1000L);
+        if (WorkoutPreparationPolicy.shouldHoldWakeLock(running)) acquireWorkoutWakeLock();
+    }
+
+    @SuppressWarnings("MissingPermission")
+    private void requestLocationUpdatesForCurrentMode() {
+        if (!gpsPermissionGranted || !gpsProviderEnabled || locationManager == null) return;
+        try {
+            long interval = WorkoutPreparationPolicy.locationIntervalMillis(
+                    running, paused, hasLiveGpsFix());
+            if (gpsUpdatesRegistered && requestedLocationIntervalMillis == interval) return;
+            if (gpsUpdatesRegistered) locationManager.removeUpdates(this);
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,
+                    interval, 2f, this, Looper.getMainLooper());
+            locationManager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER,
+                    Math.max(2_000L, interval), 2f, this, Looper.getMainLooper());
+            gpsUpdatesRegistered = true;
+            requestedLocationIntervalMillis = interval;
+        } catch (SecurityException | IllegalArgumentException ignored) {
+            gpsUpdatesRegistered = false;
+            requestedLocationIntervalMillis = -1L;
+        }
+    }
+
+    private void showSurfaceRestoreOverlay(Intent open, boolean restorePreparation) {
+        removeSurfaceRestoreOverlay();
+        surfaceWindowManager = getSystemService(WindowManager.class);
+        if (surfaceWindowManager == null) return;
+
+        Snapshot snapshot = snapshot(false);
+        LinearLayout surface = new LinearLayout(this);
+        surface.setOrientation(LinearLayout.VERTICAL);
+        surface.setGravity(Gravity.CENTER);
+        surface.setPadding(Ui.dp(this, 28), Ui.dp(this, 24),
+                Ui.dp(this, 28), Ui.dp(this, 24));
+        surface.setBackgroundColor(Ui.BLACK);
+
+        TextView state = Ui.bold(this,
+                restorePreparation ? "运动准备" : "训练继续中", 18,
+                restorePreparation ? Ui.AMBER : Ui.LIME);
+        state.setGravity(Gravity.CENTER);
+        surface.addView(state, new LinearLayout.LayoutParams(-1, Ui.dp(this, 32)));
+        TextView stage = Ui.bold(this, snapshot.stageName, 25, Ui.WHITE);
+        stage.setGravity(Gravity.CENTER);
+        surface.addView(stage, new LinearLayout.LayoutParams(-1, Ui.dp(this, 42)));
+        TextView value = Ui.numeral(this,
+                restorePreparation ? "已就绪" : remainingText(), 48, Ui.WHITE);
+        value.setGravity(Gravity.CENTER);
+        surface.addView(value, new LinearLayout.LayoutParams(-1, Ui.dp(this, 78)));
+        TextView summary = Ui.text(this,
+                Format.duration(snapshot.activeMillis) + "  ·  "
+                        + Format.distance(snapshot.totalMeters), Ui.BODY, Ui.MUTED);
+        summary.setGravity(Gravity.CENTER);
+        surface.addView(summary, new LinearLayout.LayoutParams(-1, Ui.dp(this, 32)));
+        TextView action = Ui.iconAction(this, "返回训练", 17,
+                Ui.BLACK, Ui.LIME, Ui.Symbol.FORWARD);
+        LinearLayout.LayoutParams actionParams =
+                new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.ACTION_PRIMARY));
+        actionParams.topMargin = Ui.dp(this, 28);
+        surface.addView(action, actionParams);
+
+        Runnable launch = () -> {
+            try { startActivity(open); }
+            catch (RuntimeException error) {
+                android.util.Log.w("WorkoutService", "Unable to restore workout surface", error);
+            }
+        };
+        surface.setOnClickListener(v -> launch.run());
+        action.setOnClickListener(v -> launch.run());
+
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.OPAQUE);
+        params.gravity = Gravity.TOP | Gravity.START;
+        params.setTitle("WatchIntervalsWorkoutReturn");
+        try {
+            surfaceWindowManager.addView(surface, params);
+            surfaceRestoreOverlay = surface;
+            automaticSurfaceRestore = launch;
+            clockHandler.postDelayed(automaticSurfaceRestore, 180L);
+        } catch (RuntimeException error) {
+            surfaceRestoreOverlay = null;
+            automaticSurfaceRestore = null;
+            android.util.Log.w("WorkoutService", "Unable to show workout return surface", error);
+        }
+    }
+
+    public synchronized void onWorkoutSurfaceVisible() {
+        removeSurfaceRestoreOverlay();
+        getSystemService(NotificationManager.class).cancel(SURFACE_NOTIFICATION_ID);
+    }
+
+    private void removeSurfaceRestoreOverlay() {
+        if (automaticSurfaceRestore != null) {
+            clockHandler.removeCallbacks(automaticSurfaceRestore);
+            automaticSurfaceRestore = null;
+        }
+        if (surfaceRestoreOverlay != null && surfaceWindowManager != null) {
+            try { surfaceWindowManager.removeView(surfaceRestoreOverlay); }
+            catch (RuntimeException ignored) {}
+        }
+        surfaceRestoreOverlay = null;
+        surfaceWindowManager = null;
+    }
+
+    private void acquireWorkoutWakeLock() {
+        if (wakeLock != null && !wakeLock.isHeld()) wakeLock.acquire(4 * 60 * 60 * 1000L);
+    }
+
+    private void requestSingleFixCandidates() {
+        if (!gpsPermissionGranted || locationManager == null) return;
+        lastSingleFixRequestElapsed = SystemClock.elapsedRealtime();
+        try {
+            if (currentLocationSignal == null) {
+                final CancellationSignal request = new CancellationSignal();
+                currentLocationSignal = request;
+                locationManager.getCurrentLocation(LocationManager.GPS_PROVIDER,
+                        request, getMainExecutor(), location -> {
+                            synchronized (WorkoutService.this) {
+                                if (currentLocationSignal == request) currentLocationSignal = null;
+                            }
+                            if (location != null) onLocationChanged(location);
+                        });
+            }
+            if (networkLocationSignal == null
+                    && locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                final CancellationSignal request = new CancellationSignal();
+                networkLocationSignal = request;
+                locationManager.getCurrentLocation(LocationManager.NETWORK_PROVIDER,
+                        request, getMainExecutor(), location -> {
+                            synchronized (WorkoutService.this) {
+                                if (networkLocationSignal == request) networkLocationSignal = null;
+                            }
+                            if (location != null) onLocationChanged(location);
+                        });
+            }
+        } catch (SecurityException | IllegalArgumentException ignored) {
+            if (currentLocationSignal != null) currentLocationSignal.cancel();
+            if (networkLocationSignal != null) networkLocationSignal.cancel();
+            currentLocationSignal = null;
+            networkLocationSignal = null;
+        }
+    }
+
+    private void expireSingleFixRequests(long nowElapsed) {
+        if (lastSingleFixRequestElapsed <= 0L
+                || nowElapsed - lastSingleFixRequestElapsed < 10_000L) return;
+        if (currentLocationSignal != null) {
+            currentLocationSignal.cancel();
+            currentLocationSignal = null;
+        }
+        if (networkLocationSignal != null) {
+            networkLocationSignal.cancel();
+            networkLocationSignal = null;
+        }
     }
 
     private void refreshSensorRegistrations() {
@@ -794,16 +1135,29 @@ public class WorkoutService extends Service implements LocationListener, SensorE
     }
 
     private void stopSensors() {
-        if (currentLocationSignal != null) { currentLocationSignal.cancel(); currentLocationSignal = null; }
+        cancelSingleFixRequests();
         if (gpsUpdatesRegistered) locationManager.removeUpdates(this);
         if (gnssStatusRegistered) locationManager.unregisterGnssStatusCallback(gnssStatusCallback);
         if (heartSensorRegistered || stepSensorRegistered) sensorManager.unregisterListener(this);
         gpsUpdatesRegistered = false;
+        requestedLocationIntervalMillis = -1L;
         gnssStatusRegistered = false;
         heartSensorRegistered = false;
         stepSensorRegistered = false;
         stepDetectorRegistered = false;
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+    }
+
+    private void cancelSingleFixRequests() {
+        if (currentLocationSignal != null) {
+            currentLocationSignal.cancel();
+            currentLocationSignal = null;
+        }
+        if (networkLocationSignal != null) {
+            networkLocationSignal.cancel();
+            networkLocationSignal = null;
+        }
+        lastSingleFixRequestElapsed = 0L;
     }
 
     public synchronized void togglePause() {
@@ -819,6 +1173,10 @@ public class WorkoutService extends Service implements LocationListener, SensorE
             stageGpsReady = false;
             systemExerciseBridge.pause();
         }
+        requestLocationUpdatesForCurrentMode();
+        cancelSingleFixRequests();
+        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        stopVoiceCue();
         lastTick = SystemClock.elapsedRealtime();
         vibrate(new long[]{0, 150});
         getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, notification());
@@ -829,6 +1187,8 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         if (!running || !paused) return;
         if (pauseStartedWall > 0) pausedDurationMs += Math.max(0, System.currentTimeMillis() - pauseStartedWall);
         pauseStartedWall = 0; paused = false; metrics.resetWindow(); speedFusion.reset(); resetStageGpsBaseline(); systemExerciseBridge.resume();
+        requestLocationUpdatesForCurrentMode();
+        acquireWorkoutWakeLock();
         lastTick = SystemClock.elapsedRealtime(); vibrate(new long[]{0, 100, 80, 100});
         getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, notification()); saveSession(true);
     }
@@ -837,6 +1197,10 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         tick(); if (paused && pauseStartedWall > 0) { pausedDurationMs += Math.max(0, System.currentTimeMillis() - pauseStartedWall); pauseStartedWall = 0; }
         boolean saved = saveHistoryIfNeeded(); running = false; preparing = false; paused = false;
         if (saved) clearSession();
+        unregisterScreenObserver();
+        getSystemService(NotificationManager.class).cancel(SURFACE_NOTIFICATION_ID);
+        removeSurfaceRestoreOverlay();
+        stopVoiceCue();
         systemExerciseBridge.end(); systemGpsBridge.stop(); stopSensors(); stopForeground(true); stopSelf();
     }
 
@@ -848,6 +1212,7 @@ public class WorkoutService extends Service implements LocationListener, SensorE
             if (!planCompleted && currentStage().unit == Stage.Unit.TIME) {
                 long needed = Math.max(0, currentStage().target * 1000L - stageMillis);
                 stageMillis += Math.min(delta, needed);
+                maybeAnnounceUpcomingStage();
                 checkTransition();
                 if (planCompleted && delta > needed) {
                     planCompletedActiveMs = activeMillis - (delta - needed);
@@ -944,6 +1309,11 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         gpsProviderEnabled = true;
         latestGpsLocation = new Location(location);
         latestGpsLocationIsCached = false;
+        if (preparing && gpsUpdatesRegistered) {
+            // Acquisition starts at 1 Hz. Once the first fresh fix arrives, back off to 5 s;
+            // the GNSS chip stays warm while callback and UI work drop during a long wait.
+            requestLocationUpdatesForCurrentMode();
+        }
         // The GNSS chip derives this from Doppler shift, so it is both steadier and quicker to
         // react than differencing successive positions. Feed it before any trackability filter:
         // a fix can be too imprecise to extend the route yet still carry a usable speed.
@@ -1100,6 +1470,10 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         return lastGpsFixElapsed > 0 && SystemClock.elapsedRealtime() - lastGpsFixElapsed <= GPS_STALE_MILLIS;
     }
 
+    private boolean hasLiveGpsFix() {
+        return hasFreshGpsFix() && !latestGpsLocationIsCached;
+    }
+
     private boolean hasTrackableFreshGpsFix() {
         return hasFreshGpsFix() && latestGpsLocation != null && !latestGpsLocationIsCached
                 && isTrackableGpsLocation(latestGpsLocation);
@@ -1137,6 +1511,7 @@ public class WorkoutService extends Service implements LocationListener, SensorE
             double consumed = Math.min(remainingDelta, needed);
             stageMeters += consumed; totalMeters += consumed; planDistanceMeters += consumed;
             remainingDelta -= consumed;
+            maybeAnnounceUpcomingStage();
             if (stageMeters + 0.0001d < currentStage().target) break;
             checkTransition();
         }
@@ -1182,6 +1557,8 @@ public class WorkoutService extends Service implements LocationListener, SensorE
             stageMillis = currentStage().unit == Stage.Unit.TIME ? currentStage().target * 1000L : stageMillis;
             metrics.resetWindow(); speedFusion.reset();
             playStageCue(true);
+            scheduleVoiceCue(WorkoutVoiceCuePolicy.completionAnnouncement(),
+                    WorkoutUxPolicy.STAGE_TONE_DURATION_MILLIS + 100L);
             getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, notification());
             saveSession(true);
         } else {
@@ -1191,7 +1568,38 @@ public class WorkoutService extends Service implements LocationListener, SensorE
 
     private void announceStage() {
         playStageCue(false);
+        scheduleVoiceCue(WorkoutVoiceCuePolicy.stageAnnouncement(
+                        stageIndex + 1, currentStage()),
+                WorkoutUxPolicy.STAGE_TONE_DURATION_MILLIS + 100L);
         getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, notification());
+    }
+
+    private void maybeAnnounceUpcomingStage() {
+        if (planCompleted || stages.isEmpty() || stageIndex >= stages.size() - 1
+                || preannouncedStageIndex == stageIndex) return;
+        Stage current = currentStage();
+        if (!WorkoutVoiceCuePolicy.shouldPreview(current, stageMeters, stageMillis)) return;
+        preannouncedStageIndex = stageIndex;
+        scheduleVoiceCue(WorkoutVoiceCuePolicy.upcomingAnnouncement(
+                current, stageMeters, stageMillis, stages.get(stageIndex + 1)), 0L);
+    }
+
+    private void scheduleVoiceCue(String text, long delayMillis) {
+        if (voiceSpeaker == null || !WorkoutVoiceSettings.enabled(this)) return;
+        if (pendingVoiceCue != null) clockHandler.removeCallbacks(pendingVoiceCue);
+        pendingVoiceCue = () -> {
+            pendingVoiceCue = null;
+            if (voiceSpeaker != null) voiceSpeaker.speak(text);
+        };
+        clockHandler.postDelayed(pendingVoiceCue, Math.max(0L, delayMillis));
+    }
+
+    private void stopVoiceCue() {
+        if (pendingVoiceCue != null) {
+            clockHandler.removeCallbacks(pendingVoiceCue);
+            pendingVoiceCue = null;
+        }
+        if (voiceSpeaker != null) voiceSpeaker.stop();
     }
 
     /** A short audio/haptic signal replaces the old stacked, second-long vibration sequence. */
@@ -1269,7 +1677,7 @@ public class WorkoutService extends Service implements LocationListener, SensorE
                 routeLongitudes[index] = point.getLongitude();
             }
         }
-        return new Snapshot(stage.name(), stage.unit, stage.target, stageProgressValue, remaining, Math.min(1, progress), Math.min(stageIndex + 1, stages.size()), stages.size(), totalMeters, activeMillis, visibleHeartRate,
+        return new Snapshot(stage.name(), stage.kind, stage.unit, stage.target, stageProgressValue, remaining, Math.min(1, progress), Math.min(stageIndex + 1, stages.size()), stages.size(), totalMeters, activeMillis, visibleHeartRate,
                 gpsPermissionGranted, gpsProviderEnabled, gpsUpdatesRegistered, hasTrackableFreshGpsFix(), latestGpsLocationIsCached, waitingForGps, gpsSatelliteCount, gpsSatellitesUsed, lastGpsAccuracyMeters,
                 stepSensorAvailable, activityRecognitionPermissionGranted, stepSensorRegistered, usingStepDistance, sessionSteps,
                 heartSensorAvailable, heartPermissionGranted, heartSensorRegistered, lastHeartSensorEventElapsed > 0, heartSensorWarmingUp,
@@ -1427,10 +1835,19 @@ public class WorkoutService extends Service implements LocationListener, SensorE
     }
     @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
     @Override public void onDestroy() {
+        preparationCountdownEndsElapsed = 0L;
+        clockHandler.removeCallbacks(finishPreparationCountdown);
+        unregisterScreenObserver();
+        removeSurfaceRestoreOverlay();
         saveSession(true);
         clockHandler.removeCallbacks(clock);
         clockHandler.removeCallbacks(releaseCueTone);
         releaseCueTone();
+        stopVoiceCue();
+        if (voiceSpeaker != null) {
+            voiceSpeaker.close();
+            voiceSpeaker = null;
+        }
         stopSensors();
         if (systemExerciseBridge != null) {
             if (running || preparing) systemExerciseBridge.end();
@@ -1442,7 +1859,7 @@ public class WorkoutService extends Service implements LocationListener, SensorE
     }
 
     public static final class Snapshot {
-        public final String stageName; public final Stage.Unit unit; public final int stageTarget; public final double stageProgressValue; public final long remaining;
+        public final String stageName; public final Stage.Kind stageKind; public final Stage.Unit unit; public final int stageTarget; public final double stageProgressValue; public final long remaining;
         public final double progress, totalMeters; public final int stageNumber, stageCount, heartRate;
         public final long activeMillis;
         public final boolean gpsPermissionGranted, gpsProviderEnabled, gpsRequestActive, hasGpsFix, gpsFixFromCache, waitingForGps;
@@ -1487,7 +1904,7 @@ public class WorkoutService extends Service implements LocationListener, SensorE
                 this.heartRateTrace = heartRateTrace == null ? new int[0] : heartRateTrace;
             }
         }
-        Snapshot(String stageName, Stage.Unit unit, int stageTarget, double stageProgressValue, long remaining, double progress, int stageNumber, int stageCount, double totalMeters, long activeMillis, int heartRate,
+        Snapshot(String stageName, Stage.Kind stageKind, Stage.Unit unit, int stageTarget, double stageProgressValue, long remaining, double progress, int stageNumber, int stageCount, double totalMeters, long activeMillis, int heartRate,
                  boolean gpsPermissionGranted, boolean gpsProviderEnabled, boolean gpsRequestActive, boolean hasGpsFix, boolean gpsFixFromCache, boolean waitingForGps, int gpsSatelliteCount, int gpsSatellitesUsed, float gpsAccuracyMeters,
                  boolean stepSensorAvailable, boolean activityRecognitionPermissionGranted, boolean stepSensorActive, boolean usingStepDistance, int sessionSteps,
                  boolean heartSensorAvailable, boolean heartPermissionGranted, boolean heartSensorActive, boolean heartSensorHasEvent, boolean heartSensorWarmingUp,
@@ -1496,7 +1913,7 @@ public class WorkoutService extends Service implements LocationListener, SensorE
                   double[] routeLatitudes, double[] routeLongitudes,
                   boolean preparing, boolean paused, boolean planCompleted,
                   double currentSpeedMps, boolean currentSpeedEstimated, double maxSmoothedSpeedMps, long pausedDurationMs, LiveView live) {
-            this.stageName=stageName; this.unit=unit; this.stageTarget=stageTarget; this.stageProgressValue=stageProgressValue; this.remaining=remaining; this.progress=progress; this.stageNumber=stageNumber; this.stageCount=stageCount;
+            this.stageName=stageName; this.stageKind=stageKind; this.unit=unit; this.stageTarget=stageTarget; this.stageProgressValue=stageProgressValue; this.remaining=remaining; this.progress=progress; this.stageNumber=stageNumber; this.stageCount=stageCount;
             this.totalMeters=totalMeters; this.activeMillis=activeMillis; this.heartRate=heartRate;
             this.gpsPermissionGranted=gpsPermissionGranted; this.gpsProviderEnabled=gpsProviderEnabled; this.gpsRequestActive=gpsRequestActive; this.hasGpsFix=hasGpsFix; this.gpsFixFromCache=gpsFixFromCache; this.waitingForGps=waitingForGps;
             this.gpsSatelliteCount=gpsSatelliteCount; this.gpsSatellitesUsed=gpsSatellitesUsed; this.gpsAccuracyMeters=gpsAccuracyMeters;

@@ -29,6 +29,7 @@ public class PhonePlanUiModelTest {
     }
 
     @Test public void unitAndKindChangesUseSafeDefaults() {
+        assertEquals(750, PhonePlanUiModel.convertedTarget("WALK", "DISTANCE", "DISTANCE", 750));
         assertEquals(300, PhonePlanUiModel.convertedTarget("RUN", "DISTANCE", "TIME", 1000));
         assertEquals(1000, PhonePlanUiModel.convertedTarget("RUN", "TIME", "DISTANCE", 300));
         assertEquals("TIME", PhonePlanUiModel.normalizedUnit("REST", "DISTANCE"));

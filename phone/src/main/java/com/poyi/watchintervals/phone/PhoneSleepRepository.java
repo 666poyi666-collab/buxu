@@ -12,7 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** Durable phone-side cache for sleep records already read from the paired watch. */
-final class PhoneSleepRepository {
+public final class PhoneSleepRepository {
     private static final String PREFS = "phone_sleep_cache";
     private static final String KEY_SNAPSHOT = "snapshot";
     private static final int SCHEMA_VERSION = 1;
@@ -20,13 +20,13 @@ final class PhoneSleepRepository {
 
     private PhoneSleepRepository() {}
 
-    static synchronized JSONObject load(Context context) {
+    public static synchronized JSONObject load(Context context) {
         String raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .getString(KEY_SNAPSHOT, "");
         return decode(raw);
     }
 
-    static synchronized JSONObject mergeAndSave(Context context, JSONObject incoming,
+    public static synchronized JSONObject mergeAndSave(Context context, JSONObject incoming,
             long cachedAt) throws Exception {
         JSONObject merged = merge(load(context), incoming, cachedAt);
         SharedPreferences.Editor edit = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -35,7 +35,7 @@ final class PhoneSleepRepository {
         return merged;
     }
 
-    static JSONObject merge(JSONObject cached, JSONObject incoming, long cachedAt)
+    public static JSONObject merge(JSONObject cached, JSONObject incoming, long cachedAt)
             throws Exception {
         if (!isReady(incoming)) throw new IllegalArgumentException("sleep snapshot is not ready");
         LinkedHashMap<String, JSONObject> records = new LinkedHashMap<>();
@@ -87,7 +87,7 @@ final class PhoneSleepRepository {
                 .put("records", output);
     }
 
-    static JSONObject decode(String raw) {
+    public static JSONObject decode(String raw) {
         if (raw == null || raw.trim().isEmpty()) return null;
         try {
             JSONObject source = new JSONObject(raw);

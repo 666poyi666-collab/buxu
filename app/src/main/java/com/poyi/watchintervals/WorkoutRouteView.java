@@ -60,7 +60,7 @@ final class WorkoutRouteView extends FrameLayout {
 
     WorkoutRouteView(Context context) {
         super(context);
-        setBackground(Ui.background(context, Color.rgb(18, 22, 23), 18));
+        setBackground(Ui.background(context, Color.rgb(18, 22, 23), Ui.RADIUS_ROUTE));
         setClipToOutline(true);
 
         empty = new TextView(context);
@@ -70,7 +70,7 @@ final class WorkoutRouteView extends FrameLayout {
         empty.setTextSize(12);
         empty.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         empty.setGravity(Gravity.CENTER);
-        empty.setBackground(Ui.background(context, Color.argb(230, 31, 35, 36), 16));
+        empty.setBackground(Ui.background(context, Color.argb(230, 31, 35, 36), Ui.RADIUS_CARD));
         FrameLayout.LayoutParams emptyParams =
                 new FrameLayout.LayoutParams(-1, Ui.dp(context, 58), Gravity.CENTER);
         emptyParams.leftMargin = Ui.dp(context, 28);

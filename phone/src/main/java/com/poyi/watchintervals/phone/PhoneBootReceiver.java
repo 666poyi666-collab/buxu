@@ -21,7 +21,8 @@ public class PhoneBootReceiver extends BroadcastReceiver {
     /** Broadcast the watchdog alarm sends back to this receiver. */
     public static final String ACTION_WATCHDOG = "com.poyi.watchintervals.phone.WATCHDOG";
     /** Inexact so the OS can batch it; the goal is eventual recovery, not punctuality. */
-    private static final long WATCHDOG_INTERVAL_MILLIS = AlarmManager.INTERVAL_FIFTEEN_MINUTES;
+    /** Five minutes caps a dead control path without turning the watchdog into a high-rate poll. */
+    private static final long WATCHDOG_INTERVAL_MILLIS = 5 * 60_000L;
 
     @Override public void onReceive(Context context, Intent intent) {
         if (intent == null || !Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
@@ -32,15 +33,19 @@ public class PhoneBootReceiver extends BroadcastReceiver {
     }
 
     static void startServices(Context context) {
-        try {
-            context.startForegroundService(new Intent(context, PhonePlanBridgeService.class));
-            context.startForegroundService(new Intent(context, PhoneCompanionService.class));
-        } catch (Exception error) {
-            // Android 12+ blocks background foreground-service starts in some states. The next
-            // watchdog tick retries, so this must not take the receiver down.
-            android.util.Log.w("PhoneBootReceiver", "service start deferred", error);
-        }
+        startService(context, PhonePlanBridgeService.class, "phone_api");
+        startService(context, PhoneCompanionService.class, "watch_link");
         PhoneSleepSyncWorker.schedule(context);
+    }
+
+    private static void startService(Context context, Class<?> service, String name) {
+        try {
+            context.startForegroundService(new Intent(context, service));
+        } catch (Exception error) {
+            // Android 12+ blocks background foreground-service starts in some states. Each service
+            // is attempted independently so one rejection cannot suppress the other recovery path.
+            android.util.Log.w("PhoneBootReceiver", name + " start deferred", error);
+        }
     }
 
     /**

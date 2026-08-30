@@ -6,12 +6,12 @@ import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
-import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -31,38 +31,60 @@ final class Ui {
     // OWW221 is AMOLED: a pure black background leaves those pixels physically unlit, which both
     // saves panel power on a long run and gives the bezel-less look a real product has. The old
     // near-black (7,9,10) lit every pixel on screen for no visual gain.
-    static final int BLACK = Color.rgb(0, 0, 0);
+    // 令牌集中在 WatchTokens,这里只做转发:既有调用点保持不变,同时消除重复定义。
+    // OWW221 is AMOLED: a pure black background leaves those pixels physically unlit, which both
+    // saves panel power on a long run and gives the bezel-less look a real product has.
+    static final int BLACK = WatchTokens.BLACK;
     // Watch workout palette: true-black canvas, Apple's neutral greys and one semantic colour
     // per metric family. Bright colours are reserved for live data, never used as decoration.
-    static final int PANEL = Color.rgb(28, 28, 30);
-    static final int PANEL_ACTIVE = Color.rgb(44, 44, 46);
-    static final int WHITE = Color.rgb(248, 248, 250);
-    static final int MUTED = Color.rgb(142, 142, 147);
-    static final int LINE = Color.rgb(44, 44, 46);
-    static final int LIME = Color.rgb(184, 255, 47);
-    static final int YELLOW = Color.rgb(255, 214, 10);
-    static final int CYAN = Color.rgb(100, 210, 255);
-    static final int AMBER = Color.rgb(255, 159, 10);
-    static final int RED = Color.rgb(255, 55, 95);
-    static final int GREEN = Color.rgb(48, 209, 88);
+    static final int PANEL = WatchTokens.PANEL;
+    static final int PANEL_ACTIVE = WatchTokens.PANEL_ACTIVE;
+    static final int WHITE = WatchTokens.WHITE;
+    static final int MUTED = WatchTokens.MUTED;
+    static final int LINE = WatchTokens.LINE;
+    static final int LIME = WatchTokens.LIME;
+    static final int YELLOW = WatchTokens.YELLOW;
+    static final int CYAN = WatchTokens.CYAN;
+    static final int AMBER = WatchTokens.AMBER;
+    static final int RED = WatchTokens.RED;
+    static final int GREEN = WatchTokens.GREEN;
+    static final int BRAND = WatchTokens.BRAND;
+    /** 语义浅色底、强调面板底与浮层遮罩。 */
+    static final int TINT_LIME = WatchTokens.TINT_LIME;
+    static final int TINT_CYAN = WatchTokens.TINT_CYAN;
+    static final int TINT_AMBER = WatchTokens.TINT_AMBER;
+    static final int PANEL_LIME_EDGE = WatchTokens.PANEL_LIME_EDGE;
+    static final int PANEL_ROUTE = WatchTokens.PANEL_ROUTE;
+    static final int SCRIM = WatchTokens.SCRIM;
 
     // One type scale instead of per-screen magic numbers, so headings and labels line up across
     // the home, training, plan and history pages. Figure sizes are measured off the stock
     // HeySports workout screen (378px captures / 1.35 canvas scale).
-    static final float DISPLAY = 44f;
-    static final float TITLE = 22f;
-    static final float HEADLINE = 17f;
-    static final float BODY = 13f;
-    static final float LABEL = 11f;
-    static final float CAPTION = 9.5f;
+    static final float DISPLAY = WatchTokens.DISPLAY;
+    static final float TITLE = WatchTokens.TITLE;
+    static final float HEADLINE = WatchTokens.HEADLINE;
+    static final float BODY = WatchTokens.BODY;
+    static final float LABEL = WatchTokens.LABEL;
+    static final float CAPTION = WatchTokens.CAPTION;
     /** Stock sports app: the leading elapsed-time figure. */
-    static final float FIGURE_HERO = 52f;
+    static final float FIGURE_HERO = WatchTokens.FIGURE_HERO;
     /** Stock sports app: every other metric figure on the workout page. */
-    static final float FIGURE = 38f;
+    static final float FIGURE = WatchTokens.FIGURE;
     /** Inline unit/label that trails a figure at its baseline. */
-    static final float FIGURE_LABEL = 15f;
+    static final float FIGURE_LABEL = WatchTokens.FIGURE_LABEL;
+    static final float STAGE_METRIC_FIGURE = WatchTokens.STAGE_METRIC_FIGURE;
+    static final float STAGE_METRIC_ROW = WatchTokens.STAGE_METRIC_ROW;
+    static final float STAGE_METRIC_GAP = WatchTokens.STAGE_METRIC_GAP;
     /** Page side padding. The stock app runs nearly edge-to-edge. */
-    static final float PAGE_MARGIN = 14f;
+    static final float PAGE_MARGIN = WatchTokens.PAGE_MARGIN;
+    static final float RADIUS_CARD = WatchTokens.RADIUS_CARD;
+    static final float RADIUS_CHIP = WatchTokens.RADIUS_CHIP;
+    static final float RADIUS_ROUTE = WatchTokens.RADIUS_ROUTE;
+    static final float HEADER_ICON = WatchTokens.HEADER_ICON;
+    static final float ACTION_PRIMARY = WatchTokens.ACTION_PRIMARY;
+    static final float ACTION_SECONDARY = WatchTokens.ACTION_SECONDARY;
+    static final float ACTION_CONTROL = WatchTokens.ACTION_CONTROL;
+    static final float LIST_ROW = WatchTokens.LIST_ROW;
 
     private Ui() {}
 
@@ -143,48 +165,6 @@ final class Ui {
         return drawable;
     }
 
-    static GradientDrawable oval(int color) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setShape(GradientDrawable.OVAL);
-        drawable.setColor(color);
-        return drawable;
-    }
-
-    static RippleDrawable ovalAction(Context context, int color) {
-        return new RippleDrawable(
-                ColorStateList.valueOf(Color.argb(55, 255, 255, 255)),
-                oval(color),
-                oval(Color.WHITE));
-    }
-
-    /** Two-tone disc for the primary start action — the fitness-ring style of fill. */
-    static RippleDrawable gradientOvalAction(Context context, int topColor, int bottomColor) {
-        GradientDrawable base = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{topColor, bottomColor});
-        base.setShape(GradientDrawable.OVAL);
-        return new RippleDrawable(
-                ColorStateList.valueOf(Color.argb(55, 255, 255, 255)), base, oval(Color.WHITE));
-    }
-
-    /**
-     * Tonal circular button: a dark fill tinted toward {@code color} with a matching ring.
-     *
-     * <p>Two fully saturated circles side by side read as unfinished — nothing else on the watch
-     * is that loud, and neither action looks more primary than the other. A tonal treatment keeps
-     * the colour coding while letting the destructive action sit back from the routine one.
-     */
-    static RippleDrawable tonalOvalAction(Context context, int color, int fillAlpha, int strokeAlpha) {
-        GradientDrawable base = new GradientDrawable();
-        base.setShape(GradientDrawable.OVAL);
-        base.setColor(Color.argb(fillAlpha, Color.red(color), Color.green(color), Color.blue(color)));
-        base.setStroke(dp(context, 1.5f),
-                Color.argb(strokeAlpha, Color.red(color), Color.green(color), Color.blue(color)));
-        return new RippleDrawable(
-                ColorStateList.valueOf(Color.argb(60, Color.red(color), Color.green(color), Color.blue(color))),
-                base,
-                oval(Color.WHITE));
-    }
-
     static GradientDrawable outlinedBackground(Context context, int color, int stroke, float radiusDp) {
         GradientDrawable drawable = background(context, color, radiusDp);
         drawable.setStroke(dp(context, 1), stroke);
@@ -196,11 +176,128 @@ final class Ui {
                 context, value, sizeDp, foreground);
         view.setTypeface(Typeface.create("sans", Typeface.BOLD));
         view.setGravity(Gravity.CENTER);
-        view.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(45, 255, 255, 255)), background(context, background, 16), null));
+        view.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(45, 255, 255, 255)), background(context, background, RADIUS_CARD), null));
         view.setClickable(true);
         view.setFocusable(true);
         pressable(view);
         return view;
+    }
+
+    enum Symbol { PLAY, PAUSE, STOP, LIST, BACK, FORWARD, DELETE, CHECK, HISTORY, SOUND }
+
+    static TextView iconAction(Context context, String value, float sizeDp, int foreground,
+            int background, Symbol symbol) {
+        TextView view = action(context, value, sizeDp, foreground, background);
+        setActionSymbol(context, view, symbol, foreground);
+        return view;
+    }
+
+    static void setActionSymbol(Context context, TextView view, Symbol symbol, int color) {
+        Drawable icon = new SymbolDrawable(context, symbol, color);
+        view.setCompoundDrawablesRelativeWithIntrinsicBounds(icon, null, null, null);
+        view.setCompoundDrawablePadding(dp(context, 8));
+    }
+
+    static void styleAction(Context context, TextView view, int foreground, int background) {
+        view.setTextColor(foreground);
+        view.setBackground(new RippleDrawable(
+                ColorStateList.valueOf(Color.argb(45, 255, 255, 255)),
+                background(context, background, RADIUS_CARD), null));
+    }
+
+    private static final class SymbolDrawable extends Drawable {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path path = new Path();
+        private final Symbol symbol;
+        private final int size;
+
+        SymbolDrawable(Context context, Symbol symbol, int color) {
+            this.symbol = symbol;
+            this.size = dp(context, 20);
+            paint.setColor(color);
+            paint.setStrokeWidth(dp(context, 1.8f));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+        }
+
+        @Override public int getIntrinsicWidth() { return size; }
+        @Override public int getIntrinsicHeight() { return size; }
+
+        @Override public void draw(android.graphics.Canvas canvas) {
+            android.graphics.Rect b = getBounds();
+            float left = b.left, top = b.top, width = b.width(), height = b.height();
+            float cx = left + width / 2f, cy = top + height / 2f;
+            paint.setStyle(Paint.Style.STROKE);
+            path.reset();
+            switch (symbol) {
+                case PLAY:
+                    paint.setStyle(Paint.Style.FILL);
+                    path.moveTo(left + width * .33f, top + height * .22f);
+                    path.lineTo(left + width * .78f, cy);
+                    path.lineTo(left + width * .33f, top + height * .78f);
+                    path.close(); canvas.drawPath(path, paint); break;
+                case PAUSE:
+                    paint.setStyle(Paint.Style.FILL);
+                    canvas.drawRoundRect(left + width * .28f, top + height * .22f,
+                            left + width * .43f, top + height * .78f, 2, 2, paint);
+                    canvas.drawRoundRect(left + width * .57f, top + height * .22f,
+                            left + width * .72f, top + height * .78f, 2, 2, paint); break;
+                case STOP:
+                    paint.setStyle(Paint.Style.FILL);
+                    canvas.drawRoundRect(left + width * .28f, top + height * .28f,
+                            left + width * .72f, top + height * .72f, 3, 3, paint); break;
+                case LIST:
+                    for (int i = 0; i < 3; i++) {
+                        float y = top + height * (.28f + i * .22f);
+                        canvas.drawCircle(left + width * .23f, y, paint.getStrokeWidth() * .55f, paint);
+                        canvas.drawLine(left + width * .38f, y, left + width * .78f, y, paint);
+                    } break;
+                case BACK:
+                    path.moveTo(left + width * .66f, top + height * .22f);
+                    path.lineTo(left + width * .38f, cy);
+                    path.lineTo(left + width * .66f, top + height * .78f);
+                    canvas.drawPath(path, paint); break;
+                case FORWARD:
+                    path.moveTo(left + width * .34f, top + height * .22f);
+                    path.lineTo(left + width * .62f, cy);
+                    path.lineTo(left + width * .34f, top + height * .78f);
+                    canvas.drawPath(path, paint); break;
+                case DELETE:
+                    canvas.drawLine(left + width * .28f, top + height * .32f,
+                            left + width * .72f, top + height * .32f, paint);
+                    canvas.drawRoundRect(left + width * .34f, top + height * .38f,
+                            left + width * .66f, top + height * .78f, 3, 3, paint);
+                    canvas.drawLine(left + width * .42f, top + height * .24f,
+                            left + width * .58f, top + height * .24f, paint); break;
+                case CHECK:
+                    path.moveTo(left + width * .22f, cy);
+                    path.lineTo(left + width * .43f, top + height * .7f);
+                    path.lineTo(left + width * .79f, top + height * .28f);
+                    canvas.drawPath(path, paint); break;
+                case HISTORY:
+                    canvas.drawCircle(cx, cy, width * .31f, paint);
+                    canvas.drawLine(cx, cy, cx, top + height * .32f, paint);
+                    canvas.drawLine(cx, cy, left + width * .64f, top + height * .58f, paint); break;
+                case SOUND:
+                    path.moveTo(left + width * .22f, top + height * .42f);
+                    path.lineTo(left + width * .38f, top + height * .42f);
+                    path.lineTo(left + width * .56f, top + height * .27f);
+                    path.lineTo(left + width * .56f, top + height * .73f);
+                    path.lineTo(left + width * .38f, top + height * .58f);
+                    path.lineTo(left + width * .22f, top + height * .58f);
+                    path.close();
+                    canvas.drawPath(path, paint);
+                    canvas.drawArc(left + width * .52f, top + height * .35f,
+                            left + width * .76f, top + height * .65f,
+                            -55f, 110f, false, paint); break;
+            }
+        }
+
+        @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); invalidateSelf(); }
+        @Override public void setColorFilter(android.graphics.ColorFilter filter) {
+            paint.setColorFilter(filter); invalidateSelf();
+        }
+        @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
     }
 
     /**
@@ -279,7 +376,7 @@ final class Ui {
         TextView view = bold(context, value, LABEL, foreground);
         view.setGravity(Gravity.CENTER);
         view.setPadding(dp(context, 10), 0, dp(context, 10), 0);
-        view.setBackground(background(context, background, 14));
+        view.setBackground(background(context, background, RADIUS_CHIP));
         return view;
     }
 
@@ -317,7 +414,6 @@ final class Ui {
      * no font, vendor glyph or bitmap is involved.</p>
      */
     static final class WorkoutGlyph extends View {
-        private final Paint halo = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint route = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint action = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Path actionPath = new Path();
@@ -345,10 +441,6 @@ final class Ui {
             left = (width - scale) / 2f;
             top = (height - scale) / 2f;
 
-            halo.setShader(new RadialGradient(x(.50f), y(.50f), scale * .50f,
-                    Color.argb(54, Color.red(color), Color.green(color), Color.blue(color)),
-                    Color.argb(7, Color.red(color), Color.green(color), Color.blue(color)),
-                    Shader.TileMode.CLAMP));
             route.setShader(null);
             action.setShader(null);
             route.setColor(color);
@@ -366,7 +458,6 @@ final class Ui {
 
         @Override protected void onDraw(android.graphics.Canvas canvas) {
             if (scale <= 0f) return;
-            canvas.drawCircle(getWidth() / 2f, getHeight() / 2f, scale * .48f, halo);
             canvas.drawArc(routeBounds, -78f, 293f, false, route);
             canvas.drawPath(actionPath, action);
         }
@@ -375,6 +466,43 @@ final class Ui {
     static WorkoutGlyph workoutGlyph(Context context, int color) {
         return new WorkoutGlyph(context, color);
     }
+
+    /** Compact colour sequence for the current interval plan. */
+    static final class StageStrip extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF segment = new RectF();
+        private final float gap;
+        private int[] colors = new int[0];
+
+        StageStrip(Context context) {
+            super(context);
+            gap = dp(context, 2);
+            setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        void setStages(java.util.List<Stage> stages) {
+            int count = stages == null ? 0 : Math.min(12, stages.size());
+            colors = new int[count];
+            for (int index = 0; index < count; index++) {
+                colors[index] = stageColor(stages.get(index).kind);
+            }
+            invalidate();
+        }
+
+        @Override protected void onDraw(android.graphics.Canvas canvas) {
+            if (colors.length == 0 || getWidth() <= 0 || getHeight() <= 0) return;
+            float width = (getWidth() - gap * (colors.length - 1)) / colors.length;
+            float radius = Math.min(getHeight() / 2f, dp(getContext(), 2));
+            for (int index = 0; index < colors.length; index++) {
+                float left = index * (width + gap);
+                segment.set(left, 0, left + width, getHeight());
+                paint.setColor(colors[index]);
+                canvas.drawRoundRect(segment, radius, radius, paint);
+            }
+        }
+    }
+
+    static StageStrip stageStrip(Context context) { return new StageStrip(context); }
 
     /**
      * A truthful live heart-rate trace. Samples are added from real service snapshots only;
@@ -467,7 +595,8 @@ final class Ui {
 
         @Override protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
             fill.setShader(new LinearGradient(0, 0, 0, Math.max(1, height),
-                    Color.argb(90, 255, 55, 95), Color.TRANSPARENT, Shader.TileMode.CLAMP));
+                    Color.argb(90, Color.red(RED), Color.green(RED), Color.blue(RED)),
+                    Color.TRANSPARENT, Shader.TileMode.CLAMP));
             pathDirty = true;
         }
 
@@ -619,28 +748,16 @@ final class Ui {
         return value;
     }
 
-    /** Soft radial glow behind a primary action disc, as on the stock start button. */
-    static View glow(Context context, int color, float radiusDp) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setShape(GradientDrawable.OVAL);
-        drawable.setGradientType(GradientDrawable.RADIAL_GRADIENT);
-        drawable.setGradientRadius(dp(context, radiusDp));
-        drawable.setColors(new int[]{
-                Color.argb(80, Color.red(color), Color.green(color), Color.blue(color)),
-                Color.argb(0, Color.red(color), Color.green(color), Color.blue(color))});
-        View view = new View(context);
-        view.setBackground(drawable);
-        return view;
-    }
-
-    /** Circular back affordance shared by every secondary screen (minimum 40dp hit target). */
+    /** Back affordance shared by every secondary screen (minimum 40dp hit target). */
     static TextView backButton(Context context) {
         TextView view = configureText(new MinimumTouchTargetTextView(context),
-                context, "‹", 22, WHITE);
-        view.setTypeface(Typeface.create("sans", Typeface.BOLD));
+                context, "", BODY, WHITE);
         view.setGravity(Gravity.CENTER);
+        setActionSymbol(context, view, Symbol.BACK, WHITE);
+        view.setCompoundDrawablePadding(0);
         view.setBackground(new RippleDrawable(
-                ColorStateList.valueOf(Color.argb(45, 255, 255, 255)), oval(PANEL), null));
+                ColorStateList.valueOf(Color.argb(45, 255, 255, 255)),
+                background(context, PANEL, RADIUS_CARD), null));
         view.setClickable(true);
         view.setFocusable(true);
         view.setContentDescription("返回");
@@ -657,7 +774,7 @@ final class Ui {
     static LinearLayout stageRow(Context context, int index, Stage stage, int backgroundColor) {
         LinearLayout row = new LinearLayout(context);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setBackground(background(context, backgroundColor, 14));
+        row.setBackground(background(context, backgroundColor, RADIUS_CARD));
         row.setPadding(dp(context, 12), 0, dp(context, 14), 0);
         View accent = new View(context);
         accent.setBackground(background(context, stageColor(stage.kind), 2));
@@ -685,7 +802,7 @@ final class Ui {
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(context, 14), dp(context, 12), dp(context, 14), dp(context, 12));
-        card.setBackground(background(context, PANEL, 18));
+        card.setBackground(background(context, PANEL, RADIUS_CARD));
         return card;
     }
 

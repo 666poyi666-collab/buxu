@@ -13,7 +13,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 /** Durable, rebuildable projection journal for the Phone-authoritative plan library. */
-final class PhoneSyncOutbox {
+public final class PhoneSyncOutbox {
     private static final String PREF = "sync_outbox";
     private static final String KEY = "operations";
     private static final String LAST_ACK = "last_ack_projection_fingerprint";
@@ -22,13 +22,13 @@ final class PhoneSyncOutbox {
 
     private PhoneSyncOutbox() {}
 
-    static synchronized JSONObject enqueueLibrary(Context context, JSONObject library,
+    public static synchronized JSONObject enqueueLibrary(Context context, JSONObject library,
                                                    String operation, String entityId)
             throws Exception {
         return enqueueLibrary(context, library, operation, entityId, "");
     }
 
-    static synchronized JSONObject enqueueLibrary(Context context, JSONObject library,
+    public static synchronized JSONObject enqueueLibrary(Context context, JSONObject library,
                                                    String operation, String entityId,
                                                    String cloudSourceId) throws Exception {
         JSONObject desired = buildLibraryOperation(library, operation, entityId, cloudSourceId,
@@ -42,7 +42,7 @@ final class PhoneSyncOutbox {
     }
 
     /** Rebuilds a lost/corrupted journal from the complete Phone plan snapshot. */
-    static synchronized int ensureCurrentLibrary(Context context) throws Exception {
+    public static synchronized int ensureCurrentLibrary(Context context) throws Exception {
         JSONObject library = PhonePlanLibrary.load(context);
         JSONArray old = load(context);
         JSONObject metadata = PhonePlanLibrary.projectionMetadata(context);
@@ -62,7 +62,7 @@ final class PhoneSyncOutbox {
         return reconciled.length();
     }
 
-    static JSONObject drain(Context context, WatchClient client) throws Exception {
+    public static JSONObject drain(Context context, WatchClient client) throws Exception {
         JSONArray pending = snapshotPending(context);
         if (pending.length() == 0) return syncedResult();
         JSONObject response = new JSONObject(client.post("/v1/sync/operations",
@@ -70,7 +70,7 @@ final class PhoneSyncOutbox {
         return finishDrain(context, pending, response, null);
     }
 
-    static JSONObject drain(Context context, WatchConnectionManager connection)
+    public static JSONObject drain(Context context, WatchConnectionManager connection)
             throws Exception {
         JSONArray pending = snapshotPending(context);
         if (pending.length() == 0) {
@@ -102,7 +102,7 @@ final class PhoneSyncOutbox {
                 .put("acks", acknowledgements == null ? new JSONArray() : acknowledgements);
     }
 
-    static JSONObject reconcileAcknowledgements(JSONArray current, JSONArray sent,
+    public static JSONObject reconcileAcknowledgements(JSONArray current, JSONArray sent,
                                                  JSONArray acknowledgements, String lastAck)
             throws Exception {
         HashMap<String, String> statuses = new HashMap<>();
@@ -133,18 +133,18 @@ final class PhoneSyncOutbox {
                 .put("lastAck", acknowledgedFingerprint);
     }
 
-    static synchronized int size(Context context) {
+    public static synchronized int size(Context context) {
         try { return ensureCurrentLibrary(context); }
         catch (Exception corruptedOrUnavailable) { return 1; } // fail closed; never report synced
     }
 
-    static JSONObject buildLibraryOperation(JSONObject library, String operation,
+    public static JSONObject buildLibraryOperation(JSONObject library, String operation,
                                             String entityId, String cloudSourceId)
             throws Exception {
         return buildLibraryOperation(library, operation, entityId, cloudSourceId, "");
     }
 
-    static JSONObject buildLibraryOperation(JSONObject library, String operation,
+    public static JSONObject buildLibraryOperation(JSONObject library, String operation,
                                             String entityId, String cloudSourceId,
                                             String projectionTargetId)
             throws Exception {
@@ -169,7 +169,7 @@ final class PhoneSyncOutbox {
         return item;
     }
 
-    static JSONArray reconcileOperations(JSONArray old, JSONObject desired, String lastAck)
+    public static JSONArray reconcileOperations(JSONArray old, JSONObject desired, String lastAck)
             throws Exception {
         JSONArray values = new JSONArray();
         JSONObject matching = null;
@@ -198,7 +198,7 @@ final class PhoneSyncOutbox {
         return values;
     }
 
-    static JSONArray parseOperations(String encoded) throws Exception {
+    public static JSONArray parseOperations(String encoded) throws Exception {
         JSONArray values = new JSONArray(encoded == null ? "[]" : encoded);
         for (int index = 0; index < values.length(); index++) {
             JSONObject item = values.optJSONObject(index);
@@ -218,7 +218,7 @@ final class PhoneSyncOutbox {
         return values;
     }
 
-    static JSONObject recoverProjectionMetadata(JSONArray pending, JSONObject library)
+    public static JSONObject recoverProjectionMetadata(JSONArray pending, JSONObject library)
             throws Exception {
         String currentFingerprint = CloudV3Sync.planFingerprint(library);
         for (int index = 0; index < pending.length(); index++) {
@@ -294,7 +294,7 @@ final class PhoneSyncOutbox {
         return LAST_ACK_PREFIX + projectionTargetId(context);
     }
 
-    static String receiptKeyForTarget(String watchDeviceId, String pairingSecret) {
+    public static String receiptKeyForTarget(String watchDeviceId, String pairingSecret) {
         return LAST_ACK_PREFIX + projectionTargetId(watchDeviceId, pairingSecret);
     }
 
@@ -303,7 +303,7 @@ final class PhoneSyncOutbox {
         return projectionTargetId(identity.watchDeviceId(), identity.pairingSecret());
     }
 
-    static String projectionTargetId(String watchDeviceId, String pairingSecret) {
+    public static String projectionTargetId(String watchDeviceId, String pairingSecret) {
         String watch = watchDeviceId == null ? "" : watchDeviceId;
         String secret = pairingSecret == null ? "" : pairingSecret;
         if (watch.isEmpty() || secret.isEmpty()) return "unpaired";

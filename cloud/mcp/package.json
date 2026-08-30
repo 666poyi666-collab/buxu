@@ -1,8 +1,8 @@
 {
   "name": "watch-cloud-mcp",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
-  "description": "Watch Cloud canonical sync and OAuth-protected MCP Worker (local implementation pending deployment evidence)",
+  "description": "Watch Cloud canonical sync and OAuth-protected MCP Worker",
   "scripts": {
     "test": "npm run test:static && npm run test:schema && npm run test:d1 && npm run test:worker",
     "test:contract": "npm run test:worker",

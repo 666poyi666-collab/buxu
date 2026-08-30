@@ -9,6 +9,10 @@ import java.time.Instant;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class CloudV3SyncTest {
+    @Test public void productionExchangeBoundsWanD1WorkPerRequest() {
+        assertEquals(5, CloudV3Sync.maxItemsPerExchange());
+    }
+
     @Test public void normalizesLegacyEndpointToV3AndWebSocketChannel() throws Exception {
         assertEquals("https://watch.example/sync/v3/exchange",
                 CloudV3Sync.exchangeEndpoint("https://watch.example/sync/v2/exchange"));

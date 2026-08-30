@@ -13,14 +13,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
 /** Fetches the 31-day sleep window in bounded pages so BLE never carries one giant response. */
-final class PhoneSleepSync {
-    static final int PAGE_DAYS = 7;
+public final class PhoneSleepSync {
+    public static final int PAGE_DAYS = 7;
     private static final Object FETCH_LOCK = new Object();
     private static CompletableFuture<JSONObject> activeFetch;
 
     private PhoneSleepSync() {}
 
-    static JSONObject fetchRecent(WatchConnectionManager manager, int requestedDays)
+    public static JSONObject fetchRecent(WatchConnectionManager manager, int requestedDays)
             throws Exception {
         return runSingleFlight(() -> fetchPages(manager, requestedDays));
     }
@@ -39,11 +39,11 @@ final class PhoneSleepSync {
         return mergePages(pages, days, System.currentTimeMillis());
     }
 
-    static JSONObject runSingleFlight(FetchOperation operation) throws Exception {
+    public static JSONObject runSingleFlight(FetchOperation operation) throws Exception {
         return runSingleFlight(operation, null);
     }
 
-    static JSONObject runSingleFlight(FetchOperation operation, Runnable joinedObserver)
+    public static JSONObject runSingleFlight(FetchOperation operation, Runnable joinedObserver)
             throws Exception {
         CompletableFuture<JSONObject> shared;
         boolean owner = false;
@@ -83,7 +83,7 @@ final class PhoneSleepSync {
         JSONObject fetch() throws Exception;
     }
 
-    static JSONObject mergePages(JSONArray pages, int requestedDays, long fetchedAt)
+    public static JSONObject mergePages(JSONArray pages, int requestedDays, long fetchedAt)
             throws Exception {
         Map<String, JSONObject> records = new LinkedHashMap<>();
         boolean complete = pages != null && pages.length() > 0;

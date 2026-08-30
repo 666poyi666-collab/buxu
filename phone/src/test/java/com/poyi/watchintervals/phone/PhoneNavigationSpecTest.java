@@ -19,7 +19,7 @@ public class PhoneNavigationSpecTest {
             assertTrue(symbols.add(item.symbol));
             assertFalse(item.accessibilityLabel.trim().isEmpty());
         }
-        assertArrayEquals(new String[]{"计划", "训练", "历史", "睡眠"}, labels);
+        assertArrayEquals(new String[]{"今天", "训练", "记录", "恢复"}, labels);
         assertEquals(4, symbols.size());
     }
 }
