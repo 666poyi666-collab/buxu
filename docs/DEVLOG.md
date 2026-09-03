@@ -321,3 +321,23 @@
   3. **单元测试与实机验证**：
      - `:app:testDebugUnitTest` 与 `:phone:testDebugUnitTest` 全绿通过。
      - 实机测试（`2e28bb17`）：`MainActivity` 经模拟熄屏 3 秒后再点亮，`mResumedActivity` 严格维持在 `MainActivity`，彻底告别跳回表盘现象。
+
+## 2026-09-03（训练状态下熄屏/雨滴遮屏后亮屏无条件还原 TrainingActivity）
+
+- 核心痛点与问题复现：
+  1. 用户在户外跑步/快走过程中，屏幕可能因超时熄灭、雨滴擦拭或手掌遮屏主动熄屏。
+  2. 重新抬腕或按键唤醒时，手表直接退回表盘，用户无法第一时间看表感知实时心率、配速与剩余时间。
+  3. **深层技术根因**：
+     - `WatchSurfaceRestorer` 原先遇到 `hasRecoverableSession` 时主动跳过，误以为 `WorkoutService` 的全屏通知通道会生效。
+     - 但在 Android 11 / ColorOS Watch 且设备无锁屏密码（`lockscreen.disabled=1`）的穿戴环境下，`Notification.Builder.setFullScreenIntent` 不会弹出全屏界面，只会在通知栏挂起一条 5 秒即逝的静默通知。
+     - `WorkoutService` 内部曾有 2000ms 的恢复节流（`SURFACE_RESTORE_THROTTLE_MILLIS`），当雨滴快速擦拭导致屏幕在短时间内频繁熄灭亮起时，防抖逻辑直接把恢复拦截。
+     - 手掌遮屏（palm cover）手势在熄屏前会触发 Activity 的 `onPause()`，此前暂停生命周期会清除活跃目标，导致唤醒时判定为空。
+
+- 完整解决方案与铁律落地：
+  1. **铁律逻辑**：只要训练已开始（`WorkoutService.hasRecoverableSession(context) == true`），无论因超时、掌心覆盖还是擦拭雨滴导致的熄屏或切后台，除非进程被杀死或用户在训练内主动结束，点亮瞬间目标**永久且无条件锁定为 `TrainingActivity`**。
+  2. **双通道强力拉回**：
+     - `WatchSurfaceRestorer` 监听 `ACTION_SCREEN_ON` 与 `ACTION_USER_PRESENT`，通过 `ActivityManager.AppTask.moveToFront()` 将应用任务栈直接置顶，并配合 `FLAG_ACTIVITY_REORDER_TO_FRONT | FLAG_ACTIVITY_SINGLE_TOP` 强力唤醒 `TrainingActivity`。
+     - `WorkoutService.restoreTrainingSurface()` 缩短节流至 200ms，在发通知的同时直接调用 `startActivity(open)` 与 `surface.send()`。
+  3. **Activity 锁屏穿透与生命周期补齐**：
+     - `TrainingActivity` 补齐 `onResume()`，在切回与亮屏时刻自动执行 `setShowWhenLocked(true)`、`setTurnScreenOn(true)` 以及 `service.onWorkoutSurfaceVisible()`。
+  4. **测试全通**：JVM 单元测试与真机验证全部通过。

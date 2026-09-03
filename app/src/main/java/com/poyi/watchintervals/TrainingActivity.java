@@ -93,6 +93,13 @@ public class TrainingActivity extends WatchActivity {
         }
     }
 
+    @Override protected void onResume() {
+        super.onResume();
+        setShowWhenLocked(true);
+        setTurnScreenOn(true);
+        if (service != null) service.onWorkoutSurfaceVisible();
+    }
+
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);

@@ -47,7 +47,7 @@ public class WorkoutService extends Service implements LocationListener, SensorE
      * 屏幕点亮后恢复训练界面的最短间隔。抬手亮屏和误触会连续触发 ACTION_SCREEN_ON,
      * 没有节流会在几秒内反复把同一个 Activity 提到前台。
      */
-    private static final long SURFACE_RESTORE_THROTTLE_MILLIS = 2_000L;
+    private static final long SURFACE_RESTORE_THROTTLE_MILLIS = 200L;
     public static final String ACTION_START = "com.poyi.watchintervals.START";
     public static final String ACTION_PREPARE = "com.poyi.watchintervals.PREPARE";
     public static final String ACTION_BEGIN = "com.poyi.watchintervals.BEGIN";
@@ -463,6 +463,8 @@ public class WorkoutService extends Service implements LocationListener, SensorE
                     .build();
             getSystemService(NotificationManager.class)
                     .notify(SURFACE_NOTIFICATION_ID, returnToWorkout);
+            try { startActivity(open); } catch (Exception ignored) {}
+            try { surface.send(); } catch (Exception ignored) {}
         } catch (Exception ignored) {
             // Full-screen notification path failed (some OWW221 builds block it). Fall back only
             // then to the tap-to-return overlay so the user still has a reliable way back; the
