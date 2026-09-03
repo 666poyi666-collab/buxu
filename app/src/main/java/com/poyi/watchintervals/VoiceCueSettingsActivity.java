@@ -21,6 +21,8 @@ public final class VoiceCueSettingsActivity extends WatchActivity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        setShowWhenLocked(true);
+        setTurnScreenOn(true);
         speaker = new WorkoutVoiceSpeaker(this);
 
         LinearLayout root = new LinearLayout(this);

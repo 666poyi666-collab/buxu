@@ -299,3 +299,25 @@
 - 实机验证与计划落地：
   - 手表端（OWW221，`2e28bb17`）与手机端（xaga，`192.168.1.4:5555`）均已成功装载今日计划 `9月3日｜恢复走50分钟`（Revision 92，3 阶段，共 50 分钟）。
   - JVM 单元测试 173 项全部绿色通过。
+
+## 2026-09-03（手表端熄屏/黑屏后再亮屏界面保持逻辑重构与看门狗落地）
+
+- 核心交互问题与技术根因：
+  1. **手表黑屏唤醒后跳回表盘（或被锁屏覆盖）的根因**：
+     - Android / ColorOS Watch（OWW221，API 30）在屏幕超时熄灭后，若前台 Activity 未显式声明锁屏穿透与亮屏唤醒，系统 WindowManager 与 KeyguardController 默认判定该 Activity 不能在锁屏上维持，亮屏时强行展示系统表盘（Launcher）或锁屏页。
+     - 此前除 `TrainingActivity` 外，`MainActivity`、`PlanActivity`、`HistoryActivity`、`WarmupActivity` 等均未在代码中配置 `setShowWhenLocked(true)` 与 `setTurnScreenOn(true)`。
+     - `AndroidManifest.xml` 中各 Activity 均被设置了 `android:taskAffinity=""`，破坏了手表系统在唤醒时识别和还原任务栈（Task）的默认机制。
+     - 缺乏全局熄屏生命周期感知：当没有进行中的运动时，`WorkoutService` 不在运行，没有任何服务在点亮时确保前台界面不被表盘踢掉。
+
+- 完整解决方案落地：
+  1. **`WatchSurfaceRestorer` 全局前台维持与唤醒看门狗**：
+     - 新增 `WatchSurfaceRestorer`：监听全局 Activity 生命周期（`registerActivityLifecycleCallbacks`）与系统 `ACTION_SCREEN_OFF` / `ACTION_SCREEN_ON` 广播。
+     - 自动为所有 Activity 配置 `setShowWhenLocked(true)` 和 `setTurnScreenOn(true)`。
+     - 记忆当前停留的 Activity 与任务栈；若为自然熄屏（非用户右滑或退出导致的 `finish()`），在屏幕再次点亮瞬间，通过 `FLAG_ACTIVITY_REORDER_TO_FRONT | FLAG_ACTIVITY_SINGLE_TOP` 顺畅保活并复原顶层界面。
+     - 由 24/7 常驻手表前台服务 `WatchBridgeService` 在启动时即刻初始化该机制。
+  2. **Manifest 属性规范化**：
+     - 移除全部 Activity 的 `android:taskAffinity=""`，回归统一的应用任务栈。
+     - 为所有页面补齐 `android:showWhenLocked="true"`、`android:turnScreenOn="true"` 与 `android:alwaysRetainTaskState="true"`。
+  3. **单元测试与实机验证**：
+     - `:app:testDebugUnitTest` 与 `:phone:testDebugUnitTest` 全绿通过。
+     - 实机测试（`2e28bb17`）：`MainActivity` 经模拟熄屏 3 秒后再点亮，`mResumedActivity` 严格维持在 `MainActivity`，彻底告别跳回表盘现象。

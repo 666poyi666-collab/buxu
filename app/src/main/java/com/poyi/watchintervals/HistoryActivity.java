@@ -28,6 +28,8 @@ public class HistoryActivity extends WatchActivity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        setShowWhenLocked(true);
+        setTurnScreenOn(true);
         swipeTracker = new SwipeTracker(this, new SwipeTracker.Listener() {
             @Override public void onSwipeRight() { handleHistorySwipe(true); }
             @Override public void onSwipeLeft() { handleHistorySwipe(false); }

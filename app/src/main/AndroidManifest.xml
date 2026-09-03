@@ -54,35 +54,46 @@
         <activity
             android:name=".HistoryActivity"
             android:screenOrientation="portrait"
-            android:taskAffinity=""
-            android:exported="false" />
+                        android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:alwaysRetainTaskState="true" />
         <activity
             android:name=".TrainingActivity"
             android:launchMode="singleTop"
             android:screenOrientation="portrait"
-            android:taskAffinity=""
-            android:exported="false" />
+                        android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:alwaysRetainTaskState="true" />
         <activity
             android:name=".WarmupActivity"
             android:screenOrientation="portrait"
-            android:taskAffinity=""
-            android:exported="false" />
+                        android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:alwaysRetainTaskState="true" />
         <activity
             android:name=".PlanActivity"
             android:screenOrientation="portrait"
-            android:taskAffinity=""
-            android:exported="false" />
+                        android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:alwaysRetainTaskState="true" />
         <activity
             android:name=".VoiceCueSettingsActivity"
             android:screenOrientation="portrait"
-            android:taskAffinity=""
-            android:exported="false" />
+                        android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:alwaysRetainTaskState="true" />
         <activity
             android:name=".MainActivity"
             android:alwaysRetainTaskState="true"
             android:screenOrientation="portrait"
-            android:taskAffinity=""
-            android:exported="true">
+                        android:exported="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -49,6 +49,9 @@ public class MainActivity extends WatchActivity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        WatchSurfaceRestorer.init(this);
+        setShowWhenLocked(true);
+        setTurnScreenOn(true);
         startForegroundService(new Intent(this, WatchBridgeService.class));
         startForegroundService(new Intent(this, WatchLinkService.class));
         buildUi();

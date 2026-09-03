@@ -50,6 +50,7 @@ public class WatchBridgeService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        WatchSurfaceRestorer.init(this);
         commandRouter = new WatchCommandRouter(this);
         NotificationChannel channel = new NotificationChannel(CHANNEL, "手机与 MCP 连接", NotificationManager.IMPORTANCE_MIN);
         getSystemService(NotificationManager.class).createNotificationChannel(channel);

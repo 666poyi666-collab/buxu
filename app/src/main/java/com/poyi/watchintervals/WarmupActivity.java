@@ -56,6 +56,8 @@ public class WarmupActivity extends WatchActivity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        setShowWhenLocked(true);
+        setTurnScreenOn(true);
         plan = getIntent().getStringExtra("plan");
         stages = PlanStore.decode(plan);
         if (stages.isEmpty() && PlanStore.isExplicitlyEmpty(this)) {

@@ -36,6 +36,8 @@ public class PlanActivity extends WatchActivity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        setShowWhenLocked(true);
+        setTurnScreenOn(true);
         if (state != null) {
             openGroupId = state.getString(STATE_GROUP_ID, "");
             String restoredPlanId = state.getString(STATE_DETAIL_PLAN_ID, "");
