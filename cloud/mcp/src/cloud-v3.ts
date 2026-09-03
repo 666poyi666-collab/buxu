@@ -72,7 +72,8 @@ const HEALTH_ITEM_KEYS = new Set(['operationId', 'recordId', 'sourceRevision', '
 const HEALTH_ALLOWED_KEYS = new Set([
   'kind', 'timestamp', 'startTime', 'endTime', 'steps', 'calories', 'activeDurationMinutes',
   'activityCount', 'exerciseDurationMinutes', 'restingHeartRateBpm', 'maxHeartRateBpm',
-  'averageHeartRateBpm', 'baselineHeartRateBpm', 'stressScore',
+  'averageHeartRateBpm', 'baselineHeartRateBpm', 'stressScore', 'heartRateBpm',
+  'walkingHeartRateBpm', 'restingCalories', 'distanceMeters',
 ])
 const LIVE_KEYS = new Set([
   'statusRevision', 'observedAt', 'expiresAt', 'connectionState', 'activeSession',
@@ -350,7 +351,8 @@ function validHealthRecord(value: unknown): value is JsonRecord {
   }
   for (const key of ['steps', 'calories', 'activeDurationMinutes', 'activityCount',
     'exerciseDurationMinutes', 'restingHeartRateBpm', 'maxHeartRateBpm',
-    'averageHeartRateBpm', 'baselineHeartRateBpm', 'stressScore']) {
+    'averageHeartRateBpm', 'baselineHeartRateBpm', 'stressScore', 'heartRateBpm',
+    'walkingHeartRateBpm', 'restingCalories', 'distanceMeters']) {
     if (value[key] !== undefined && !finite(value[key])) return false
   }
   return !forbiddenField(value)

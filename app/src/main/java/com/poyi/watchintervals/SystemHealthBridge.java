@@ -158,30 +158,58 @@ final class SystemHealthBridge {
         List<?> items = (List<?>) proto.getClass().getMethod("getItemsList").invoke(proto);
         for (Object item : items) {
             JSONObject json = new JSONObject();
-            copyNumber(json, item, "step", "getStep", "steps");
-            copyNumber(json, item, "totalStep", "getTotalStep", "steps");
-            copyNumber(json, item, "stepCount", "getStepCount", "steps");
-            copyNumber(json, item, "calorie", "getCalorie", "calories");
-            copyNumber(json, item, "totalCalorie", "getTotalCalorie", "calories");
-            copyNumber(json, item, "calories", "getCalories", "calories");
-            copyNumber(json, item, "activeDuration", "getActiveDuration", "activeDurationMinutes");
-            copyNumber(json, item, "activityDuration", "getActivityDuration", "activeDurationMinutes");
+            // Diagnostic: log the exact protobuf getter names once per record type so field mapping
+            // is derived from the real firmware, not guessed.
+            if (out.length() == 0 && android.util.Log.isLoggable(TAG, android.util.Log.VERBOSE)) {
+                StringBuilder names = new StringBuilder();
+                for (Method method : item.getClass().getMethods()) {
+                    String methodName = method.getName();
+                    if (methodName.startsWith("get") && method.getParameterCount() == 0) {
+                        names.append(methodName).append(' ');
+                    }
+                }
+                android.util.Log.v(TAG, "GETTERS[" + parserClass + "] " + names.toString().trim());
+            }
+            // Field mapping derived from the real firmware getter names (see the GETTERS[] log):
+            // DailyActivityRecord -> getSteps/getActiveCalories/getRestingCalories/getWorkoutTime/
+            //   getActivitySessions/getDistance/getDate; HeartRateStatsRecord -> getRestingHeartRate/
+            //   getWalkingHeartRate/getSleepBenchmarkHeartRate/getTimestamp; HeartRateRecord ->
+            //   getValue/getTimestamp.
+            copyNumber(json, item, "steps", "getSteps", "steps");
+            copyNumber(json, item, "totalSteps", "getTotalStep", "steps");
+            copyNumber(json, item, "calories", "getActiveCalories", "calories");
+            copyNumber(json, item, "totalCalories", "getCalories", "calories");
+            copyNumber(json, item, "restingCalories", "getRestingCalories", "restingCalories");
+            copyNumber(json, item, "workoutTime", "getWorkoutTime", "exerciseDurationMinutes");
+            copyNumber(json, item, "activitySessions", "getActivitySessions", "activityCount");
             copyNumber(json, item, "activityCount", "getActivityCount", "activityCount");
-            copyNumber(json, item, "exerciseDuration", "getExerciseDuration", "exerciseDurationMinutes");
+            copyNumber(json, item, "distance", "getDistance", "distanceMeters");
             copyNumber(json, item, "restingHeartRate", "getRestingHeartRate", "restingHeartRateBpm");
+            copyNumber(json, item, "walkingHeartRate", "getWalkingHeartRate", "walkingHeartRateBpm");
+            copyNumber(json, item, "sleepBenchmarkHeartRate", "getSleepBenchmarkHeartRate", "baselineHeartRateBpm");
+            copyNumber(json, item, "heartRate", "getValue", "heartRateBpm");
             copyNumber(json, item, "maxHeartRate", "getMaxHeartRate", "maxHeartRateBpm");
             copyNumber(json, item, "avgHeartRate", "getAvgHeartRate", "averageHeartRateBpm");
-            copyNumber(json, item, "averageHeartRate", "getAverageHeartRate", "averageHeartRateBpm");
             copyNumber(json, item, "baselineHeartRate", "getBaselineHeartRate", "baselineHeartRateBpm");
-            copyNumber(json, item, "stressValue", "getStressValue", "stressScore");
-            copyNumber(json, item, "stressScore", "getStressScore", "stressScore");
-            copyNumber(json, item, "timestamp", "getTimestamp", "timestamp");
+            copyNumber(json, item, "timestamp", "getTimestamp2", "timestamp");
+            if (!json.has("timestamp")) copyNumber(json, item, "timestamp", "getTimestamp", "timestamp");
             copyNumber(json, item, "startTime", "getStartTime", "startTime");
             copyNumber(json, item, "endTime", "getEndTime", "endTime");
+            copyDate(json, item, "getDate", "timestamp");
             if (json.length() == 0) continue;
             out.put(json);
         }
         return out;
+    }
+
+    private static void copyDate(JSONObject json, Object target, String getter, String key)
+            throws Exception {
+        try {
+            Object value = target.getClass().getMethod(getter).invoke(target);
+            if (value instanceof Long && ((Long) value) > 0L) {
+                json.put(key, ((Long) value).doubleValue());
+            }
+        } catch (NoSuchMethodException ignored) { }
     }
 
     private static void copyNumber(JSONObject json, Object target, String call, String getter,
