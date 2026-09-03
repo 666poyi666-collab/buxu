@@ -557,9 +557,7 @@ public class TrainingActivity extends WatchActivity {
                 }
             }
             Ui.setTextIfChanged(stageHeart, s.heartRate > 0 ? String.valueOf(s.heartRate) : "--");
-            Ui.setTextColorIfChanged(stageHeart,
-                    s.live.heartRateZone > 0
-                            ? Ui.ZONE_COLORS[s.live.heartRateZone - 1] : Ui.MUTED);
+            Ui.setTextColorIfChanged(stageHeart, s.heartRate > 0 ? Ui.RED : Ui.MUTED);
             Ui.setTextIfChanged(stageDistance,
                     String.format(Locale.CHINA, "%.2f", Math.max(0d, s.totalMeters) / 1000d));
             Ui.setTextIfChanged(stageCalories, String.valueOf(s.live.calories));
@@ -579,9 +577,7 @@ public class TrainingActivity extends WatchActivity {
             Ui.setTextIfChanged(pace, formatCurrentPace(s));
             Ui.setTextColorIfChanged(pace, paceLive ? Ui.CYAN : Ui.MUTED);
             Ui.setTextIfChanged(heart, s.heartRate > 0 ? String.valueOf(s.heartRate) : "--");
-            Ui.setTextColorIfChanged(heart,
-                    s.live.heartRateZone > 0
-                            ? Ui.ZONE_COLORS[s.live.heartRateZone - 1] : Ui.MUTED);
+            Ui.setTextColorIfChanged(heart, s.heartRate > 0 ? Ui.RED : Ui.MUTED);
             zoneBar.set(s.live.heartRateZone);
             heartTrace.setSamples(s.heartRate > 0 ? s.live.heartRateTrace : null);
             Ui.setTextIfChanged(duration, Format.duration(s.activeMillis));

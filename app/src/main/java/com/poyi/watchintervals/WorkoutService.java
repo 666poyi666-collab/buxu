@@ -430,22 +430,23 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         long now = SystemClock.elapsedRealtime();
         if (now - lastSurfaceRestoreAt < SURFACE_RESTORE_THROTTLE_MILLIS) return;
         lastSurfaceRestoreAt = now;
+        boolean restorePreparation = preparing && !running;
+        Intent open = new Intent(this,
+                restorePreparation ? WarmupActivity.class : TrainingActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                        | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         try {
-            boolean restorePreparation = preparing && !running;
-            Intent open = new Intent(this,
-                    restorePreparation ? WarmupActivity.class : TrainingActivity.class)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                            | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                            | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             if (restorePreparation) {
                 open.putExtra("plan", PlanStore.encode(stages));
             } else {
                 open.putExtra(TrainingActivity.EXTRA_PREPARED_SESSION, true);
             }
-            if (Settings.canDrawOverlays(this)) {
-                showSurfaceRestoreOverlay(open, restorePreparation);
-                return;
-            }
+            // OWW221 rejects foreground-service-launched activities, so bring the training surface
+            // back via a headless full-screen notification whose PendingIntent launches the
+            // Activity automatically. The tap-to-return overlay is deliberately NOT preferred here:
+            // a raise-wrist wake must land on the same live training screen, not a substitute that
+            // needs a tap.
             PendingIntent surface = PendingIntent.getActivity(this,
                     restorePreparation ? 4301 : 4302, open,
                     PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
@@ -463,7 +464,11 @@ public class WorkoutService extends Service implements LocationListener, SensorE
             getSystemService(NotificationManager.class)
                     .notify(SURFACE_NOTIFICATION_ID, returnToWorkout);
         } catch (Exception ignored) {
-            // 用户仍可从 ongoing workout 通知进入同一界面。
+            // Full-screen notification path failed (some OWW221 builds block it). Fall back only
+            // then to the tap-to-return overlay so the user still has a reliable way back; the
+            // auto-launch path is always preferred so the same live screen returns on wake.
+            try { showSurfaceRestoreOverlay(open, restorePreparation); }
+            catch (Exception overlayFailed) { /* The ongoing workout notification remains usable. */ }
         }
     }
 

@@ -38,6 +38,7 @@ public final class PhoneSleepSyncWorker extends Worker {
             String state = result.optString("state");
             if ("ready".equals(state)) {
                 PhoneSleepRepository.mergeAndSave(context, result, System.currentTimeMillis());
+                CloudSnapshotSync.syncSleepAsync(context);
                 return Result.success();
             }
             // Permission is a user action, not a transient transport failure.

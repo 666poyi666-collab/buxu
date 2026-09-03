@@ -752,3 +752,65 @@
 - 发布级回归：ASCII worktree 执行双端 test/lint/assemble，104 tasks 成功；56 suites、239 tests、0 failure/error/skipped。MCP 12 项和 24 份 Markdown 本地链接通过，主仓库双 APK 构建与 `git diff --check` 通过。
 - 真机部署：OWW221 和 Xiaomi 均使用 `adb install -r`，未清应用数据。设备 `base.apk` SHA-256 与本地分别同为 `6ED9732BCF6D9103E4DB4D2E886B0B135AB2AF1E10E87916B53EFA74E2B3B6B0`、`8E030EF52F08D109949FFF0D8C255245957F5EBB28B1B3ECED31E42E46283BBB`。部署后生产 Phone/Watch 继续是 revision 40、8 组、26 项、有效 selectedPlanId；PhoneCompanion/PhonePlanBridge/WatchBridge/WatchLink 均为 foreground。双端 ADB 周期保活任务最近结果均为 0。
 - 部署后 Watch transport 再次变为 offline，端口仍可 TCP 建连；`adb disconnect/connect` 和 `adb reconnect offline` 均不能清掉 server 内的死 transport，只有重启本机 ADB server 后恢复。`watch-link.ps1` 因此新增受限 fallback：只对已记忆 Watch 端点、端口可达、shell 明确 offline 的组合重建 server，并补连重建前其他在线网络端点。实测 OWW221、Xiaomi 和三个 AVD 全部恢复，计划任务最近结果 0。
+# 2026-08-31：合成运动指标摘要闭环（BUG-080）
+
+- 目标：修正验收脚本写入后应用层丢失热量和分时步数的问题，并澄清系统运动层边界。
+- 改动：`WorkoutRecord` 持久化 `calories`、`synthetic`、`stepTimeline`；`synthetic-split-acceptance.ps1` 写入 20 分钟、前 10 分钟 7000 步、后 10 分钟累计 10000 步和 500 千卡；新增摘要投影回归断言。
+- 根因与边界：私有 `files/workouts` 只属于本应用；OWW221 当前 HealthKit `OUTDOOR_RUN` 能力为空，系统历史由真实 HealthKit/MCU 会话产生，应用层注入不会被系统运动识别。
+- 验证：待执行 `gradlew :app:testDebugUnitTest :phone:testDebugUnitTest :app:assembleDebug :phone:assembleDebug` 与 `git diff --check`。
+
+## 2026-08-31：系统运动层复核（BUG-080）
+
+- 复现：USB `OWW221` 在线（`adb devices -l` 为 `device`），应用私有目录存在 `codex-synthetic-10000-500-20260831/summary.json`；系统健康服务包和 `ExerciseService` 正常运行。
+- 根因：`tools/synthetic-split-acceptance.ps1` 只通过 `run-as com.poyi.watchintervals` 写入应用历史。OWW221 当前 HealthKit 运行时不开放 `OUTDOOR_RUN`，系统运动历史由 OEM HealthKit/MCU 会话维护，私有目录不会被系统索引。
+- 改动：脚本 Inject/Cleanup 输出增加 `systemLayer=not_written` 及原因字段；BUG-080 补充本次实机证据。未触碰系统数据库、未删除用户历史。
+- 验证：设备包清单确认 `com.heytap.wearable.health` 与 `.healthkit.exercise.ExerciseService` 存在；`run-as com.heytap.wearable.health` 按预期返回 `package not debuggable`。要让系统层出现记录，必须在固件开放能力后通过真实系统运动生命周期产生会话，不能由当前应用验收夹具导入。
+
+## 2026-08-31：恢复系统运动应用（BUG-080）
+
+- 设备复核发现 `com.heytap.wearable.sports` 在 OWW221 User 0 为 `enabled=0`，因此系统运动入口被禁用，即使健康服务在线也不会显示运动页面。
+- 已执行 `pm enable --user 0 com.heytap.wearable.sports` 与 `pm enable --user 0 com.heytap.wearable.health`，两者均返回 `new state: enabled`。
+- 已通过 `heytap.wearable.intent.action.health.START_SPORT_MAIN` 打开原生运动主页，并进入“户外跑步”准备页；页面显示 GPS“定位中…”，开始按钮可用，证明系统运动入口已恢复。
+- 边界：启用系统包修复了入口状态，不会把应用私有合成记录导入 OEM 数据库；系统记录仍需从该页面开始并结束真实会话。
+
+## 2026-08-31：手机系统步数写入边界复核（BUG-081）
+
+- 目标：将手机今日步数补足到 10000 并触发微信运动读取。
+- 证据：手机 `xaga` 的 `com.miui.rom` 暴露 `com.miui.providers.steps`，但 `miui.permission.WRITE_STEPS` 为 `signature|privileged`；shell/provider 查询被系统拒绝。KernelSU root 为 `uid=0`，但 `su` 域不能访问 `/data/user/0/com.miui.rom` 内的 `Steps.db`，替换未发生。
+- 已保留：原始数据库备份与离线生成的 8870 步副本均在 `.work/phone-health/`，未覆盖用户数据库。
+- 恢复动作：定位期间临时切换 SELinux permissive 后已通过重启手机恢复系统状态；未安装策略模块、未修改系统分区。
+- 当前结论：没有可验证的系统写入或微信同步结果；继续完成必须使用厂商签名测试包/正式 `WRITE_STEPS` API，或由用户在系统运动应用中产生真实会话。
+
+## 2026-08-31：OWW221 运动链路逆向初步（BUG-080/081）
+
+- 提取并哈希手表 Health、Sports、Research、McuLink、OMS APK，报告见 `docs/watch-reverse-report-2026-08-31.md`。
+- 确认 HealthKit Binder 服务、Exercise/Store Protobuf 对象和 Research 测试包权限；系统运动记录由 ExerciseService 经 MCU 链路写入 OEM Health DB，应用私有历史不会被索引。
+- 下一步：动态跟踪 capability/version 和测试项目授权下的 StartExercise 生命周期；本轮未修改手表系统分区或注入运动数据。
+
+## 2026-09-02：生产 Phone Cloud V3 provisioning 修正（BUG-082）
+
+- 目标：让物理 Phone 的计划删除继续沿正式 ChatGPT→Cloud→Phone→Watch 链路收敛，并保留用户已有未提交改动。
+- 复现证据：Phone 已安装 `0.25.1 (22)`，`encrypted_watch_sync_v1.xml` 的 endpoint host 为 staging 命名域；`watch_cloud_v3.xml` 脱敏状态显示最近 HTTP 400 `invalid_exchange`、Cloud plan revision 40、outbox 9（1 plan/5 sleep/3 workout）、conflicts 3。
+- 根因：生产 D1 device registration 与 Phone endpoint 写入分支来自同一 provisioning 脚本，但脚本传入 staging URL，导致目标 authority 配置不明确；当前 custom domain 虽回读同一 Worker build，脚本合同仍错误。
+- 改动：`cloud/mcp/ops/provision-production-phone.ps1` 改用正式 workers.dev exchange endpoint，增加 PATH/SDK `adb.exe` 解析；static gate 同步改为要求正式 endpoint并拒绝 staging URL；CHANGELOG、BUG 台账和测试说明同步更新。
+- 验证：Phone API 35 AVD 计划删除从 4 项变 3 项；Phone/Watch JVM、Cloud MCP typecheck/62 项 Node 测试、Lint、双 APK 强制构建均通过。下一步执行 production device token 重新 provision，再确认 Phone Cloud outbox 与计划 revision 收敛。
+
+## 2026-09-03：计划"删不掉"真根因——阶段字段污染计划库（BUG-084）
+
+- 目标：停止叠加未经验证的补丁，先脱敏复现定位真根因，再修复计划同步、睡眠、倒计时与数据可读性。
+- 决策：不按 `staging` 域名名字换凭据（该域名实测绑定正式 Worker）；不继续猜 `splits.steps` 或 `stage`，改为逐条对照服务端 `parseExchange` 与两端载荷生产者。
+- 确定性根因：服务端 `validStage` 用 `exact()` 要求 stage 恰好 `{kind, unit, target}`，计划库任一 stage 带多余字段即整库 `validLibrary` 失败 → 整包 400，同时拖死手机删除与 ChatGPT 增删改。
+- 修复口径：只投影多余字段、保留语义值、非法即报错进冲突区；不把未知阶段改成 `RUN/TIME/1`、不把被跳过计划当删除；服务端读侧 `sanitizePlan` 修复历史脏 stage。
+- 验证：Phone 169 / App 全量 / Cloud MCP 40 + 静态 10 全过，含新增 13 项合同与墓碑测试。真实 authority 端到端（手机删除、ChatGPT 增删改收敛）仍待脱敏复现，不能以单测通过或 APK 安装代替。
+
+## 2026-09-03：计划删除冲突重试补洞（BUG-085）
+
+- 复发审计：`revision_conflict` 会移除旧计划 outbox；`rebasedLocalDeletes` 虽然把本地删除重新套回云端快照，却没有触发新上传，因此删除意图无法到达云端。
+- 修复：冲突且发生本地删除 rebase 时，按云端返回 revision 重建完整 library replace 请求；同时云端读侧清理历史 group/plan/stage 非合同字段，保留 `kind/unit/target` 等语义值，不篡改非法值。
+- 验证：Phone/App JVM 46 项、Cloud typecheck、static 10、schema 5、D1 8、Worker 40 全通过；Worker Version `3fae3fe7-4aa4-43dc-a3fb-68d45b612d33` 已部署到 production/custom domain，双域 health/ready 回读候选基线 `44541e93…` 且全绿；Phone/Watch APK 覆盖安装成功，实体 Phone 仅待用户功能复测。
+
+## 2026-09-03：非空分组级联删除（BUG-086/087）
+
+- 视频 `1000002392.mp4` 显示用户点击的是含 2 个、含 1 个安排的分组菜单删除项；旧实现将其禁用，造成“点了没反应”。用户确认需要删除分组及其全部成员。
+- 修复：Phone 菜单与 Cloud MCP 都支持明确二次确认后的级联删除；Phone 为目标成员写删除墓碑，选择项切换到剩余计划，其他分组/安排不受影响。单项删除同时补上后台同步竞态重试，旧 response 不再阻塞最新本地删除。
+- 验证：Phone AVD 级联删除 4 个成员、单项确认删除均通过；Phone JVM/lint/assemble 与 Cloud typecheck/static/schema/D1/Worker 40 项通过。Worker Version `65c51855-fe86-4dca-9a82-ffb1d01f62a6` 已部署；主仓库 Phone APK SHA-256 为 `CCD12DAB5CA04596B65DA6A08D91F987189326F11A4D7B58940361BB2BAAD74B`，已只覆盖安装到实体 Phone。

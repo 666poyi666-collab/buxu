@@ -18,4 +18,14 @@ public final class CloudSnapshotSync {
     public static boolean sync(Context context) {
         return CloudV3Sync.sync(context) == CloudV3Sync.SyncOutcome.SUCCESS;
     }
+
+    /** Sends a plan-only exchange so a plan edit is not held behind health-data backfill. */
+    public static boolean syncPlans(Context context) {
+        return CloudV3Sync.syncPlans(context) == CloudV3Sync.SyncOutcome.SUCCESS;
+    }
+
+    /** Sends cached sleep records without coupling them to workout or plan backfill. */
+    public static void syncSleepAsync(Context context) {
+        CloudV3Sync.syncSleepAsync(context);
+    }
 }

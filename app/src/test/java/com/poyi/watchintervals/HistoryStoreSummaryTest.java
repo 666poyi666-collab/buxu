@@ -13,6 +13,12 @@ public class HistoryStoreSummaryTest {
         JSONObject summary = new JSONObject()
                 .put("id", "synthetic-split")
                 .put("distanceMeters", 1200)
+                .put("steps", 10000)
+                .put("calories", 500)
+                .put("synthetic", true)
+                .put("stepTimeline", new JSONArray()
+                        .put(new JSONObject().put("elapsedMs", 600000).put("steps", 7000))
+                        .put(new JSONObject().put("elapsedMs", 1200000).put("steps", 10000)))
                 .put("splits", new JSONArray()
                         .put(new JSONObject().put("index", 1)
                                 .put("distanceMeters", 1000)
@@ -34,6 +40,10 @@ public class HistoryStoreSummaryTest {
                 .getInt("paceSecondsPerKm"));
         assertEquals(292, copied.getInt("bestPaceSecondsPerKm"));
         assertTrue(copied.has("heartRateRange"));
+        assertEquals(10000, copied.getInt("steps"));
+        assertEquals(500, copied.getInt("calories"));
+        assertTrue(copied.getBoolean("synthetic"));
+        assertEquals(2, copied.getJSONArray("stepTimeline").length());
         assertFalse(copied.has("route"));
         assertFalse(copied.has("heartRateSamples"));
         assertFalse(copied.has("coordinates"));

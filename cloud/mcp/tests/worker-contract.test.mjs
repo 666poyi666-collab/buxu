@@ -1345,15 +1345,6 @@ test('Watch Worker + D1 canonical sync, auth, metadata and retirement contract',
       assert.equal(onePlan.plan.name, 'Cloud interval updated')
       assert.equal(onePlan.plan.stages[0].target, 300)
 
-      const nonEmptyGroupDelete = mcpToolPayload(await callMcpTool(
-        worker.baseUrl, writeToken, 'watch_delete_plan_group', {
-          requestId: uuid(3340), operationId: uuid(3341),
-          expectedRevision: v3PlanRevision, groupId: 'group-cloud',
-        },
-      ))
-      assert.equal(nonEmptyGroupDelete.outcome, 'conflict')
-      assert.equal(nonEmptyGroupDelete.error, 'group_not_empty')
-
       const newGroup = mcpToolPayload(await callMcpTool(
         worker.baseUrl, writeToken, 'watch_upsert_plan_group', {
           requestId: uuid(3342), operationId: uuid(3343),
@@ -1393,6 +1384,41 @@ test('Watch Worker + D1 canonical sync, auth, metadata and retirement contract',
       ))
       assert.equal(changedPlan.plan.groupId, 'group-week-two')
       assert.deepEqual(changedPlan.plan.stages.map((stage) => stage.target), [300, 120, 60])
+
+      const cascadeGroup = mcpToolPayload(await callMcpTool(
+        worker.baseUrl, writeToken, 'watch_upsert_plan_group', {
+          requestId: uuid(3350), operationId: uuid(3351),
+          expectedRevision: v3PlanRevision,
+          group: { id: 'group-cascade', name: 'Cascade group', sortOrder: 2 },
+        },
+      ))
+      assert.equal(cascadeGroup.outcome, 'acknowledged')
+      v3PlanRevision = cascadeGroup.revision
+      const cascadePlan = mcpToolPayload(await callMcpTool(
+        worker.baseUrl, writeToken, 'watch_upsert_plan', {
+          requestId: uuid(3352), operationId: uuid(3353),
+          expectedRevision: v3PlanRevision,
+          plan: {
+            id: 'plan-cascade', name: 'Cascade plan', groupId: 'group-cascade',
+            requirement: 'Cascade test', sortOrder: 0,
+            stages: [{ kind: 'RUN', unit: 'TIME', target: 300 }],
+          },
+        },
+      ))
+      assert.equal(cascadePlan.outcome, 'acknowledged')
+      v3PlanRevision = cascadePlan.revision
+      const cascadeDelete = mcpToolPayload(await callMcpTool(
+        worker.baseUrl, writeToken, 'watch_delete_plan_group', {
+          requestId: uuid(3354), operationId: uuid(3355),
+          expectedRevision: v3PlanRevision, groupId: 'group-cascade',
+        },
+      ))
+      assert.equal(cascadeDelete.outcome, 'acknowledged')
+      v3PlanRevision = cascadeDelete.revision
+      const cascadeRead = mcpToolPayload(await callMcpTool(
+        worker.baseUrl, readToken, 'watch_get_plan', { planId: 'plan-cascade' },
+      ))
+      assert.equal(cascadeRead.plan, null)
 
       const missingPlanDelete = mcpToolPayload(await callMcpTool(
         worker.baseUrl, writeToken, 'watch_delete_plan', {
@@ -2402,4 +2428,37 @@ test('Watch Worker + D1 canonical sync, auth, metadata and retirement contract',
       await partial.dispose()
     }
   })
+})
+
+test('V3 plan library read repairs a historically dirty stage without changing its target', { timeout: 180_000 }, async () => {
+  const oauth = await startFakeOAuth()
+  const dirtyPlan = {
+    id: 'plan-dirty', name: 'Dirty plan', groupId: 'group-dirty', requirement: '',
+    sortOrder: 0, stages: [{ kind: 'WALK', unit: 'DISTANCE', target: 800, note: 'poison-extra-field', index: 2 }],
+    updatedAt: 1234,
+  }
+  const setupSql = [
+    "INSERT INTO watch_v3_plan_libraries (owner_id, revision, selected_plan_id, updated_at, last_operation_id) "
+      + "VALUES ('poyi-owner', 1, 'plan-dirty', '2026-01-01T00:00:00.000Z', 'seed')",
+    "INSERT INTO watch_v3_plan_groups (owner_id, group_id, name, sort_order, payload_json, updated_at) "
+      + "VALUES ('poyi-owner', 'group-dirty', 'Dirty group', 0, '{\"id\":\"group-dirty\",\"name\":\"Dirty group\",\"sortOrder\":0,\"color\":\"red\"}', '2026-01-01T00:00:00.000Z')",
+    "INSERT INTO watch_v3_plans (owner_id, plan_id, group_id, name, sort_order, payload_json, updated_at) "
+      + `VALUES ('poyi-owner', 'plan-dirty', 'group-dirty', 'Dirty plan', 0, '${JSON.stringify(dirtyPlan).replaceAll("'", "''")}', '2026-01-01T00:00:00.000Z')`,
+  ].join(';\n')
+  const worker = await startIsolatedWorker({ oauth, setupSql })
+  try {
+    const readToken = oauth.token({ scope: 'watch:read' }).value
+    const listed = mcpToolPayload(await callMcpTool(worker.baseUrl, readToken, 'watch_list_plans'))
+    const plan = Array.isArray(listed.plans)
+      ? listed.plans.find((item) => item.id === 'plan-dirty') : null
+    assert.ok(plan, JSON.stringify(listed))
+    assert.deepEqual(listed.groups, [{ id: 'group-dirty', name: 'Dirty group', sortOrder: 0 }])
+    assert.deepEqual(plan.stages, [{ kind: 'WALK', unit: 'DISTANCE', target: 800 }])
+    assert.deepEqual(Object.keys(plan).sort(), [
+      'groupId', 'id', 'name', 'requirement', 'sortOrder', 'stages',
+    ])
+  } finally {
+    await worker.dispose()
+    await oauth.dispose()
+  }
 })

@@ -43,7 +43,7 @@ if ($Action -eq 'Cleanup') {
     Invoke-WatchShell "rm -f $directory/summary.json $directory/route.ndjson $directory/heart.ndjson"
     Invoke-WatchShell "rmdir $directory"
     Invoke-AdbQuiet @('-s', $WatchSerial, 'shell', 'am', 'start', '-n', "$package/.MainActivity")
-    [pscustomobject]@{ ok = $true; action = 'cleanup'; recordId = $RecordId } |
+    [pscustomobject]@{ ok = $true; action = 'cleanup'; recordId = $RecordId; systemLayer = 'not_written' } |
         ConvertTo-Json -Compress
     exit 0
 }
@@ -53,7 +53,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Synthetic record already exists; clean it befo
 Invoke-WatchShell "mkdir $directory"
 
 $endedAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-$startedAt = $endedAt - 360000
+$startedAt = $endedAt - 1200000
 $splits = @(
     [ordered]@{ index = 1; distanceMeters = 1000; durationMs = 300000; paceSecondsPerKm = 300 },
     [ordered]@{ index = 2; distanceMeters = 200; durationMs = 60000; paceSecondsPerKm = 300 }
@@ -63,11 +63,17 @@ $summary = [ordered]@{
     id = $RecordId
     startedAt = $startedAt
     endedAt = $endedAt
-    durationMs = 360000
+    durationMs = 1200000
     pausedDurationMs = 0
-    elapsedDurationMs = 360000
+    elapsedDurationMs = 1200000
     distanceMeters = 1200
-    steps = 1500
+    steps = 10000
+    calories = 500
+    synthetic = $true
+    stepTimeline = @(
+        [ordered]@{ elapsedMs = 600000; steps = 7000 },
+        [ordered]@{ elapsedMs = 1200000; steps = 10000 }
+    )
     averageHeartRate = 150
     plan = ''
     planName = '合成公里验收（非真实训练）'
@@ -107,4 +113,6 @@ Invoke-AdbQuiet @('-s', $WatchSerial, 'shell', 'am', 'start', '-n', "$package/.M
     distanceMeters = 1200
     splitCount = 2
     synthetic = $true
+    systemLayer = 'not_written'
+    systemLayerReason = 'private app history fixture; OEM HealthKit exercise session is not importable'
 } | ConvertTo-Json -Compress

@@ -128,3 +128,78 @@
 - 最终门禁：ASCII worktree 双端 JVM 56 suites/239 tests 全通过，双端 Lint/assemble 共 104 tasks 成功；主仓库双 APK 构建、MCP pytest 12/12、24 份 Markdown 本地链接和 `git diff --check` 通过。最终 Watch/Phone APK SHA-256 为 `6ED9732B...B3B6B0` / `8E030EF5...83BBB`。
 - 真机以 `install -r` 无数据覆盖安装：OWW221 与 Xiaomi 回读 `base.apk` 分别逐字匹配本地 APK；生产 Phone/Watch 仍为 revision 40、8 组、26 项且 selectedPlanId 有效，四个前台服务运行。`PoyiWatchAdbLink` / `PoyiPhoneAdbLink` 周期任务 LastResult 均为 0。
 - 部署后一次 Watch Wi-Fi transport 卡在 `already connected + device offline`，旧保活无法恢复。新增 TCP 可达条件下的最终 ADB server 重建，并在重建后补连原在线网络端点；实测 Watch/Phone 均回到 device，Watch 周期任务 LastResult=0。
+
+## 2026-09-03（计划"删不掉"真根因：阶段字段污染计划库）
+
+- 用户实跑反馈：训练计划手机端删不掉、云端 ChatGPT 无法增删改。此前两版结论（`splits.steps` 与 `stage`）互相冲突，本轮不再猜，逐条对照服务端 `parseExchange` 与手机端/云端载荷生产者定位。
+- 确定性根因：服务端 `validStage` 用 `exact()` 要求 stage 恰好是 `{kind, unit, target}` 三个键，多任何一个字段（如 `name`/`index`/`note`）整库 `validLibrary` 失败，整个 `/sync/v3/exchange` 返回 400 `invalid_exchange`。计划库是整库替换，删除就表达为"库中无该计划"，所以一条脏 stage 同时拖死手机删除与 ChatGPT 增删改。
+- 修复（不篡改目标、不把跳过当删除）：
+  - 手机端 `cloudPlanLibrary` 把 stage 投影为 `{kind, unit, target}`，丢弃多余字段但保留语义值；`kind/unit` 非枚举或 `target<1` 时抛错并进入冲突区报告，绝不改成 `RUN/TIME/1`、绝不静默丢弃计划。
+  - `collectPlan` 捕获投影异常，把整个计划库隔离到 conflicts（错误码 `local_contract_invalid`），保留本地快照与删除墓碑，不崩溃、不上传、不假报删除。
+  - 服务端 `loadPlanLibrary` 读侧 `sanitizePlan`/`sanitizeStage` 修复 D1 中历史遗留的脏 stage；`replaceCloudPlanLibrary`（ChatGPT 直写路径）原已用 `validLibrary` 校验拒绝脏输入。
+  - `applyCloudV3IfUnchanged` 云端 replace 时重新套用本地未确认删除墓碑，防止旧云快照复活已删计划。
+- 防复发测试：手机端 `CloudV3PlanContractTest` 10 项（投影键集、丢弃额外字段但保留值、非法枚举/目标报错不篡改、空名报错不改名、悬空分组引用置空、非法库判不可发送）；`PhonePlanLibraryMutationTest` 2 项（云 replace 不复活删除、无删除时照常应用）；云端 `worker-contract` 新增 1 项（D1 脏 stage 读回即修复且不改目标）。Phone 169、App 全部、Cloud MCP 40 + 静态 10 全过。
+- 边界：本轮仍缺真实环境证据——手机/云端 D1 与 ChatGPT 均无法从本机直连，删除与 ChatGPT 增删改的端到端闭环需在真实 authority 下用脱敏数据复现，不能用单测通过或 APK 安装代替。
+
+## 2026-09-03（补充：手表端可读性与倒计时）
+
+- 心率数字固定红色：`TrainingActivity` 原先在每次刷新把当前/阶段心率数值染成 `ZONE_COLORS[heartRateZone-1]`，违背"心率固定红色"；改为 `heartRate > 0 ? Ui.RED : Ui.MUTED`，区间色只保留在独立 `zoneBar`。平均心率本就固定红色，未改动。
+- 倒计时闪屏：`WarmupActivity.showCountdownFrame` 每帧都调用 `Ui.popIn`，把全屏黑色遮罩重置为 alpha 0.18 + scale 0.72 再动画，肉眼即闪屏；改为仅首次显示时 popIn，后续只 `setTextIfChanged` 更新数字。
+- 屏幕常亮：手表端有刻意的"禁用 `FLAG_KEEP_SCREEN_ON`"设计（`WatchWorkoutResourceTest` 断言），常亮/息屏恢复/续航归入暂缓的 P4，本轮不做临时常亮，避免破坏省电设计。
+- 睡眠数据链核对（未改代码）：手机 `SleepScreen` 已展示阶段时间线、阶段构成与"N 段睡眠"；云端 `cloudSleepRecords` 返回同一 `record→session→stage` 结构与单位/epoch 毫秒/`updatedAt`/`sourceRevision`，ChatGPT 与手机一致。具体展示效果待真机验证。
+
+## 2026-09-03（计划删除 revision 冲突重试补洞）
+
+- 用户复测仍无法删除后，沿着真实状态机复核发现：计划请求收到 `revision_conflict` 时，旧 outbox 项会被正确移除；随后本地删除墓碑虽被重新套到云端快照上，却没有生成新的计划请求，导致墓碑停在本机、云端旧计划继续存在。
+- 修复：`CloudV3Sync.applyResponse` 在检测到“云端冲突 + 本地删除被重新套用”时，使用云端返回的最新 revision 重建完整计划库请求；本轮请求优先级和 5 项健康数据分片逻辑保持不变。
+- 云端读投影从只清理 stage 扩展为清理 group/plan/stage 的所有非合同字段，并将失效选中项安全归零；语义值不做枚举或目标值强制改写。
+- 防复发：新增 `CloudV3SyncTest.rebasedLocalDeleteIsRequeuedAgainstTheReturnedCloudRevision`；扩展 Worker 历史脏数据测试覆盖 group/plan/stage 多余字段。Phone JVM 46 项、Cloud typecheck、static/schema/D1/Worker 40 项均通过。
+- 部署与边界：Worker 已以当前候选基线 `44541e93…` 部署到 production/custom domain，Version ID 为 `3fae3fe7-4aa4-43dc-a3fb-68d45b612d33`；双域 health/ready 回读新版本并全绿。实体 Phone/Watch 仅执行 APK 安装成功，不做 ADB 功能控制或测试，计划删除仍需用户在设备上复测。
+
+## 2026-09-03（非空分组级联删除）
+
+- 用户提供的 `1000002392.mp4`（1080×2460，约 11.7 秒）显示实际点击的是分组右侧“…”菜单中的“分组内有 2 个安排”和“分组内有 1 个安排”，不是具体安排详情页的删除按钮。
+- 第一版代码通过 `enabled = false` 静默阻止非空分组删除；用户明确确认需要“分组及其全部安排一起删除”，因此改为危险操作二次确认，而不是继续无响应或偷偷搬移成员。
+- 修复：菜单显示“删除分组及 N 个安排”；确认层明确“全部删除”，Phone 数据层只移除目标 groupId 及成员 planId，为每个成员写待同步删除墓碑，其他分组和安排保持不变。Cloud MCP 的同名写工具同步改为同样的级联语义。
+- 同时修复单项删除在后台同步竞态下被旧响应阻塞的问题：本地 plan 发生变化时立即按云端最新 revision 重建上传请求，不再卡在 `planUploadBlockedRevision`。
+- 验证：Phone AVD 已验证非空分组 4 个成员级联删除、单项安排确认删除；Phone JVM/lint/assemble 与 Cloud typecheck/static/schema/D1/Worker 40 项通过。Worker Version `65c51855-fe86-4dca-9a82-ffb1d01f62a6` 已部署，Phone APK 已覆盖安装到实体手机，未做实体功能点击或 ADB 查询。
+
+
+## 2026-09-03（删除后无反馈：补可见删除结果提示）
+
+- 用户反馈“点击删除确认后没有反馈”，重复两个入口（分组删除、单项删除）均无效；经 AVD 复位验证，删除数据层本身能落盘、列表能减少，问题不是删除失败，而是界面没有明确的成功反馈。
+- 根因：`PhoneViewModel.deletePlan`/`deleteGroup` 成功路径只更新顶栏一个小字号 `sync.message` 状态条，从不 `emit(PhoneEvent.Toast(...))`；只有失败才弹 Toast。在未配置云端或未连接手表时，该状态条文字偏向“本机已保存 · 云端未连接”，用户难以感知删除已成功。
+- 修复：`deletePlan`/`deleteGroup` 成功后立即 `emit(PhoneEvent.Toast("安排已删除")/("分组及其中安排已删除"))`；`queueLibrarySync` 的三个分支（未连接云端、云端同步失败、等待手表）也各自弹出明确提示，不再只依赖状态条小字。
+- 验证：Phone JVM/lint/assemble 全通过；实体 Phone APK `0.25.1 (22)` 已覆盖安装到手机（SHA-256 `49FBB1F6…`），仅安装未做功能点击；删除成功反馈为 UI 层改动，最终以用户复测确认为准。
+
+## 2026-09-03（删掉的分组复活：补分组墓碑）
+
+- 用户复测：删除“我的计划”分组后，重新打开 App 又显示；其他分组也删不掉；并明确要求确认云端/ChatGPT 能收到删除。AVD 复位验证 UI 删除本身有效，问题在重启/同步后的复活。
+- 手机实际状态（只读诊断）：本地库已删除“我的计划”（3 个空分组、0 计划、0 计划墓碑）；但**云端 D1 仍是 rev 77、4 个分组（含“我的计划”）**，手表仍存 rev 75、6 个分组+7 个计划。重新打开时云端/手表旧快照把“我的计划”带回。
+- 确定性根因：**分组删除没有墓碑**。`mutateDeleteGroup` 只为成员计划写 `deletedPlanIds`，分组删除仅表现为“从 groups 数组移除”。云端回写 `rebasePendingDeletes` 只重套用计划墓碑、不处理分组，于是云端/手表旧快照回写时分组必然复活。计划删除有墓碑保护，分组删除缺失。
+- 修复（手机端 `PhonePlanLibrary`）：
+  - 新增 `deletedGroupIds` 墓碑数组，`mutateDeleteGroup` 删除分组时记录分组墓碑；`normalize`/`syncMetadata`/`applySyncMetadata` 全程保留。
+  - `rebasePendingDeletes` 新增 `rebasePendingGroupDeletes`，云端回写时从快照中剔除墓碑分组及其成员计划，防止复活；无计划墓碑时也会执行（删空分组场景）。
+  - `applySyncMetadata`（手表/对端元数据写回）同样重套用本地墓碑，防止对端旧库写回复活。
+  - `cloudPlanLibrary` 只输出 `schemaVersion/selectedPlanId/groups/plans` 四键，墓碑仅存本地，不破坏云端 `LIBRARY_KEYS` 严格校验。
+- 云端（`cloud-v3.ts`）：整库替换已把“分组缺失”表达为删除，无需 schema 变更；无新增 wire 字段。
+- 验证：Phone JVM 175 项通过；Cloud typecheck + static/schema/D1/Worker 40 项通过。新增 2 项回归测试：`cloudReplaceNeverResurrectsAGroupDeletedOnThisDevice`、`deletingEmptyGroupRecordsGroupTombstoneAndSurvivesCloudReplace`。
+- 边界：会话中仓库带中文路径导致主仓库单体 `ClassNotFoundException`（已知环境问题），故在 ASCII 副本 `wt-watchintervals` 完成测试与 `assembleDebug`，APK 回拷主仓库。实体手机仅执行 `adb install -r`，未启动、未点击、未做功能验证；删除收敛与手表投影最终以用户实机复测为准。
+
+## 2026-09-03（连续删除第二个分组“没反应”：阻塞式同步占满单槽 IO）
+
+- 用户复测反馈更精确：删掉一个分组成功，但紧跟着删第二个分组“没反应”；退出重进后又能删。第一次修复（分组墓碑）已让“删了又回来”消失，本次是同一个 App 进程内连续删除的卡顿。
+- 确定性根因：`PhoneViewModel.ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))`，即单并发 IO 作用域。而 `deleteGroup`/`deletePlan` 在执行完本地删除+刷新后，**在同一个 ioScope 协程里同步等待 `queueLibrarySync` 的阻塞网络调用**（`CloudSnapshotSync.syncPlans` 云端 HTTP、`PhoneSyncOutbox.drain` 手表 20s 超时、可选 `GET /v1/plan/profile` 10s 超时）。删除 A 占住了唯一 IO 槽位直到网络同步结束；删除 B 的 `ioScope.launch` 只能排队等 A 的慢同步，界面表现为“没反应”。退出重进进程重建、IO 槽位空闲，B 立即删除，故“退出重进又能删”。
+- 修复（`PhoneViewModel.deleteGroup` / `deletePlan`）：本地删除 + `refreshPlans()` + 成功 Toast 仍在 ioScope 内即时完成；网络同步改为 `viewModelScope.launch(Dispatchers.IO) { queueLibrarySync(...) }`，移出单槽 ioScope，不再阻塞下一次删除。并发同步由 `PhonePlanLibrary`/`PhoneSyncOutbox`/`CloudV3Sync` 的 `synchronized` 方法与 cloud operationId 幂等性保证安全。
+- 验证：Phone JVM/lint/assemble 通过；APK SHA-256 `2E3E1382…` 已覆盖安装到手机，未做功能点击。
+- ChatGPT 云端侧：已部署 Worker `buildCommit=44541e93…`（healthz/readyz 全绿）已含全套 MCP 计划写工具：`watch_upsert_plan_group`、`watch_delete_plan_group`（级联删除分组成员）、`watch_upsert_plan`、`watch_move_plan`、`watch_replace_plan_stages`（替换阶段）、`watch_delete_plan`、`watch_select_plan`；均使用 expected plan-library revision（OCC）+ `replaceCloudPlanLibrary` 落库，OAuth `WATCH_WRITE_SCOPE` 保护。本轮无云代码变更，无需重部署。
+
+## 2026-09-03（手表连接：缓存地址快速重连 + 明确手表端保活前提）
+
+- 用户反馈：手机蓝牙已连手表，但 App 显示未连接；有时显示连接但很慢。经只读诊断：手机 App 连接状态卡在 `SCANNING`（一直扫描）、`lastSeenAt=0`、`lanAvailable=false`，从未真正连上；手表 App 未运行。
+- 根因澄清：App 的“已连接”是手机端自己建立的加密 BLE GATT 通道（扫描→GATT 连接→发现服务→订阅→配对密钥认证）或 LAN 通道；它依赖**手表端前台服务**（`WatchLinkService` BLE 外设+广播、`WatchBridgeService` HTTP 8765 + mDNS）对外广播。系统蓝牙“已连接/配对”不等于 App 的加密通道成立——当手表 App 没运行（两个前台服务没起来），手机端无可连接对象，必然一直扫描。这不是手机端代码 bug。
+- 手机端可修点（已修）：BLE 传输 `BleGattTransport` 之前每次进程重启都从零做 20 秒扫描，因为**不缓存手表蓝牙地址**。本次新增：
+  - 成功连接或扫到设备时把 `BluetoothDevice.getAddress()` 持久化到 `ble_connect_state`。
+  - `connect()` 优先用缓存地址直接 `getRemoteDevice(address)+connectGatt`（跳过扫描）；令 `cachedAttemptDirty` 标志控制：缓存直连失败时下一次回退到真实扫描，避免用陈旧地址无限重试。
+- 边界：缓存地址仅当手表端广播/前台服务在运行时有效；若手表 App 被杀，仍需先打开手表 App 让两个前台服务运行，手机才能连上。手机端无法在手表端无服务时伪造“已连接”。
+- 验证：Phone JVM/lint/assemble 通过；APK SHA-256 `DD8C7F7F…` 已覆盖安装到手机，未做功能点击。真实连接需手机+手表同开，最终以实机为准。

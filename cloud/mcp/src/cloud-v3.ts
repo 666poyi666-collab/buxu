@@ -237,6 +237,33 @@ function validLibrary(value: unknown): value is PlanLibrary {
   return value.selectedPlanId === null || planIds.has(value.selectedPlanId)
 }
 
+/**
+ * Projects a stage onto exactly the wire shape so pre-existing extra fields in D1 can never
+ * poison a later exchange. Semantic values (kind/unit/target) are preserved, never coerced.
+ */
+function sanitizeStage(stage: JsonRecord): JsonRecord {
+  return { kind: stage.kind, unit: stage.unit, target: stage.target }
+}
+
+/** Strips non-wire fields from a group without changing its semantic values. */
+function sanitizeGroup(group: JsonRecord): JsonRecord {
+  return { id: group.id, name: group.name, sortOrder: group.sortOrder }
+}
+
+/** Strips non-wire fields from a plan and its stages without changing semantic values. */
+function sanitizePlan(plan: JsonRecord): JsonRecord {
+  return {
+    id: plan.id,
+    name: plan.name,
+    groupId: plan.groupId ?? null,
+    requirement: plan.requirement,
+    sortOrder: plan.sortOrder,
+    stages: Array.isArray(plan.stages)
+      ? plan.stages.map((stage) => sanitizeStage(stage as JsonRecord))
+      : plan.stages,
+  }
+}
+
 function validStageResult(value: unknown): boolean {
   return isRecord(value) && exact(value, STAGE_RESULT_KEYS) && safeInteger(value.index, 1)
     && boundedString(value.name, 200) && ['DISTANCE', 'TIME'].includes(String(value.unit))
@@ -410,11 +437,16 @@ async function loadPlanLibrary(db: D1Database): Promise<JsonRecord> {
     db.prepare('SELECT payload_json FROM watch_v3_plans WHERE owner_id = ? ORDER BY sort_order, plan_id')
       .bind(OWNER_ID).all<{ payload_json: string }>(),
   ])
+  const sanitizedGroups = groups.results.map((row) => sanitizeGroup(JSON.parse(row.payload_json)))
+  const sanitizedPlans = plans.results.map((row) => sanitizePlan(JSON.parse(row.payload_json)))
+  const planIds = new Set(sanitizedPlans.map((plan) => String(plan.id)))
+  const selectedPlanId = typeof library.selected_plan_id === 'string'
+    && planIds.has(library.selected_plan_id) ? library.selected_plan_id : null
   return {
     revision: Number(library.revision),
-    selectedPlanId: library.selected_plan_id,
-    groups: groups.results.map((row) => JSON.parse(row.payload_json)),
-    plans: plans.results.map((row) => JSON.parse(row.payload_json)),
+    selectedPlanId,
+    groups: sanitizedGroups,
+    plans: sanitizedPlans,
     updatedAt: library.updated_at,
   }
 }
@@ -1035,10 +1067,20 @@ export async function cloudSleepRecords(db: D1Database, limit = 31): Promise<Jso
 
 export async function summarizeCloudSleep(db: D1Database): Promise<JsonRecord> {
   const records = await cloudSleepRecords(db, 31) as { records: Array<{ record: JsonRecord }> }
-  const total = records.records.reduce((sum, item) => sum + Number(item.record.totalDurationMinutes ?? 0), 0)
-  const scores = records.records.map((item) => Number(item.record.sleepScore)).filter(Number.isFinite)
+  // Blank days (no session and zero duration) are not sleep nights; count them separately so a
+  // monthly average is not dragged down by "0分/0分" placeholder records from the device.
+  const meaningful = records.records.filter((item) => {
+    const record = item.record
+    const sessions = Array.isArray(record.sessions) ? record.sessions : []
+    return sessions.length > 0 || Number(record.totalDurationMinutes ?? 0) > 0
+  })
+  const empty = records.records.length - meaningful.length
+  const total = meaningful.reduce((sum, item) => sum + Number(item.record.totalDurationMinutes ?? 0), 0)
+  const scores = meaningful.map((item) => Number(item.record.sleepScore)).filter(Number.isFinite)
   return {
     recordCount: records.records.length,
+    nightsWithData: meaningful.length,
+    emptyRecordCount: empty,
     totalDurationMinutes: total,
     averageScore: scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : null,
   }

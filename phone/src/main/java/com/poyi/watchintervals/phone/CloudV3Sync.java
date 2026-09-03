@@ -42,6 +42,8 @@ final class CloudV3Sync {
     private static final AtomicBoolean RESYNC_REQUESTED = new AtomicBoolean();
     private static final AtomicBoolean FULL_SYNC_REQUESTED = new AtomicBoolean();
     private static final AtomicBoolean LIVE_STATUS_REQUESTED = new AtomicBoolean();
+    private static final AtomicBoolean PLAN_ONLY_REQUESTED = new AtomicBoolean();
+    private static final AtomicBoolean SLEEP_ONLY_REQUESTED = new AtomicBoolean();
     private static final Set<String> FORBIDDEN = Set.of(
             "route", "routes", "latitude", "longitude", "coordinates",
             "heartRateSamples", "heartSamples", "token", "accessToken", "refreshToken",
@@ -55,6 +57,28 @@ final class CloudV3Sync {
              "stageResults", "averagePaceSecondsPerKm", "averageCadenceSpm",
             "elevationGainMeters", "splits", "bestPaceSecondsPerKm", "heartRateRange",
             "dataSourceSummary");
+    // The server validates an exchange as one unit, so a single malformed health record rejects
+    // every other item in the batch -- including a plan delete. These shapes are projected
+    // locally to exactly the accepted keys before an item can enter the outbox.
+    private static final Set<String> REQUIRED_WORKOUT_FIELDS = Set.of(
+            "schemaVersion", "id", "startedAt", "endedAt", "durationMs", "distanceMeters",
+            "steps", "averageHeartRate", "plan", "planName", "planGroup", "planRequirement",
+            "stageResults");
+    private static final Set<String> OPTIONAL_WORKOUT_INTEGERS = Set.of(
+            "pausedDurationMs", "elapsedDurationMs", "planCompletedActiveMs",
+            "planCompletedWallTime", "freeRecordingActiveMs", "routePointCount",
+            "averagePaceSecondsPerKm", "bestPaceSecondsPerKm");
+    private static final Set<String> OPTIONAL_WORKOUT_NUMBERS = Set.of(
+            "planDistanceMeters", "freeRecordingDistanceMeters", "maxSmoothedSpeedMps",
+            "averageCadenceSpm", "elevationGainMeters");
+    private static final Set<String> SPLIT_FIELDS = Set.of(
+            "index", "distanceMeters", "durationMs", "paceSecondsPerKm");
+    private static final Set<String> STAGE_RESULT_FIELDS = Set.of(
+            "index", "name", "unit", "target", "completedAtMs", "totalDistanceMeters");
+    private static final Set<String> SOURCE_SUMMARY_FIELDS = Set.of(
+            "distanceSource", "speedSource", "heartRateSource", "locationAccuracyClass");
+    private static final java.util.regex.Pattern ENTITY_ID =
+            java.util.regex.Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$");
 
     private CloudV3Sync() {}
 
@@ -63,21 +87,40 @@ final class CloudV3Sync {
     }
 
     static void syncAsync(Context context) {
-        requestAsync(context, true, true);
+        requestAsync(context, true, true, false, false);
     }
 
     static void syncLiveAsync(Context context) {
-        requestAsync(context, false, true);
+        requestAsync(context, false, true, false, false);
     }
 
     static void syncCommandAsync(Context context) {
-        requestAsync(context, false, false);
+        requestAsync(context, false, false, false, false);
     }
 
-    private static void requestAsync(Context context, boolean fullSync, boolean liveStatus) {
+    static void syncPlanAsync(Context context) {
+        requestAsync(context, false, false, true, false);
+    }
+
+    static SyncOutcome syncPlans(Context context) {
+        return sync(context, false, false, true, false);
+    }
+
+    static void syncSleepAsync(Context context) {
+        requestAsync(context, false, false, false, true);
+    }
+
+    static SyncOutcome syncSleep(Context context) {
+        return sync(context, false, false, false, true);
+    }
+
+    private static void requestAsync(Context context, boolean fullSync, boolean liveStatus,
+                                     boolean planOnly, boolean sleepOnly) {
         Context app = context.getApplicationContext();
         if (fullSync) FULL_SYNC_REQUESTED.set(true);
         if (liveStatus) LIVE_STATUS_REQUESTED.set(true);
+        if (planOnly) PLAN_ONLY_REQUESTED.set(true);
+        if (sleepOnly) SLEEP_ONLY_REQUESTED.set(true);
         if (!RUNNING.compareAndSet(false, true)) {
             RESYNC_REQUESTED.set(true);
             return;
@@ -86,15 +129,40 @@ final class CloudV3Sync {
             try {
                 do {
                     RESYNC_REQUESTED.set(false);
-                    boolean collectDeviceData = FULL_SYNC_REQUESTED.getAndSet(false);
+                    boolean fullRequested = FULL_SYNC_REQUESTED.getAndSet(false);
+                    boolean planOnlyRequested = PLAN_ONLY_REQUESTED.getAndSet(false);
+                    boolean sleepOnlyRequested = SLEEP_ONLY_REQUESTED.getAndSet(false);
+                    // A plan mutation takes priority over a queued full bootstrap. Preserve the
+                    // full request for the next loop so slow sleep/history backfill never blocks
+                    // a delete or edit from reaching the authority.
+                    boolean planSlice = planOnlyRequested;
+                    boolean sleepSlice = !planSlice && sleepOnlyRequested;
+                    if ((planSlice || sleepSlice) && fullRequested) {
+                        FULL_SYNC_REQUESTED.set(true);
+                        RESYNC_REQUESTED.set(true);
+                    }
+                    if (planSlice && sleepOnlyRequested) {
+                        SLEEP_ONLY_REQUESTED.set(true);
+                        RESYNC_REQUESTED.set(true);
+                    }
                     boolean includeLiveStatus = LIVE_STATUS_REQUESTED.getAndSet(false);
-                    sync(app, collectDeviceData, includeLiveStatus);
-                } while (RESYNC_REQUESTED.getAndSet(false));
+                    if ((planSlice || sleepSlice) && includeLiveStatus) {
+                        LIVE_STATUS_REQUESTED.set(true);
+                        RESYNC_REQUESTED.set(true);
+                    }
+                    boolean collectDeviceData = fullRequested && !planSlice && !sleepSlice;
+                    sync(app, collectDeviceData, includeLiveStatus && !planSlice && !sleepSlice,
+                            planSlice, sleepSlice);
+                } while (RESYNC_REQUESTED.getAndSet(false)
+                        || FULL_SYNC_REQUESTED.get() || PLAN_ONLY_REQUESTED.get()
+                        || SLEEP_ONLY_REQUESTED.get());
             } finally {
                 RUNNING.set(false);
                 if (RESYNC_REQUESTED.getAndSet(false)) requestAsync(app,
                         FULL_SYNC_REQUESTED.getAndSet(false),
-                        LIVE_STATUS_REQUESTED.getAndSet(false));
+                        LIVE_STATUS_REQUESTED.getAndSet(false),
+                        PLAN_ONLY_REQUESTED.getAndSet(false),
+                        SLEEP_ONLY_REQUESTED.getAndSet(false));
             }
         });
     }
@@ -105,32 +173,60 @@ final class CloudV3Sync {
     }
 
     static SyncOutcome sync(Context context) {
-        return sync(context, true, true);
+        return sync(context, true, true, false, false);
     }
 
     static SyncOutcome syncLive(Context context) {
-        return sync(context, false, true);
+        return sync(context, false, true, false, false);
     }
 
     private static synchronized SyncOutcome sync(Context context, boolean collectDeviceData,
-                                                 boolean includeLiveStatus) {
+                                                 boolean includeLiveStatus, boolean planOnly,
+                                                 boolean sleepOnly) {
         if (!CloudSyncCredentials.readyForCloudV3(context)) return SyncOutcome.PERMANENT_FAILURE;
         CloudSyncCredentials.Config config = CloudSyncCredentials.load(context);
         JSONObject state = loadState(context, config);
         try {
             boolean normalizedSleep = normalizePendingSleepOutbox(state);
+            boolean normalizedWorkouts = normalizePendingWorkoutOutbox(state);
+            boolean quarantinedItems = quarantineUnsendableItems(state);
             boolean prunedSleepConflicts = pruneResolvedLocalSleepConflicts(state);
-            if (normalizedSleep) {
+            if (normalizedSleep || normalizedWorkouts || quarantinedItems) {
                 state.remove("activeRequest");
             }
-            if (normalizedSleep || prunedSleepConflicts) {
+            if (normalizedSleep || normalizedWorkouts || quarantinedItems
+                    || prunedSleepConflicts) {
                 saveState(context, state);
+            }
+            // Always drain a pending plan first, then cached sleep, before attempting the broad
+            // history backfill. A previously persisted full request may contain a slow or
+            // malformed health item; it must not hold a plan edit or sleep record hostage.
+            if (!planOnly && !sleepOnly) {
+                String priority = pendingPriority(state.getJSONArray("outbox"));
+                if ("plan".equals(priority)) {
+                    planOnly = true;
+                    collectDeviceData = false;
+                    includeLiveStatus = false;
+                } else if ("sleep".equals(priority)) {
+                    sleepOnly = true;
+                    collectDeviceData = false;
+                    includeLiveStatus = false;
+                }
             }
             boolean collectBeforeBuild = collectDeviceData
                     && state.optJSONObject("activeRequest") == null;
             int cursorResets = 0;
             for (int round = 0; round < MAX_DRAIN_ROUNDS; round++) {
                 JSONObject active = state.optJSONObject("activeRequest");
+                if ((planOnly || sleepOnly) && active != null
+                        && !isSliceRequest(active, planOnly, sleepOnly)) {
+                    // A previous full request may be persisted after a timeout. It is safe to
+                    // discard that envelope because its source items remain in the durable
+                    // outbox; rebuilding it as plan-only lets a delete proceed first.
+                    state.remove("activeRequest");
+                    saveState(context, state);
+                    active = null;
+                }
                 if (active != null && !activeMatchesCredential(active, config)) {
                     state.remove("activeRequest");
                     saveState(context, state);
@@ -139,12 +235,30 @@ final class CloudV3Sync {
                 }
                 if (active == null) {
                     if (collectBeforeBuild) collectOutbox(context, state);
+                    else if (planOnly) collectPlan(context, state, state.getJSONArray("outbox"));
+                    else if (sleepOnly) collectCachedSleep(context, state);
+                    if (!planOnly && !sleepOnly) {
+                        String priority = pendingPriority(state.getJSONArray("outbox"));
+                        if ("plan".equals(priority)) {
+                            planOnly = true;
+                            collectDeviceData = false;
+                            includeLiveStatus = false;
+                        } else if ("sleep".equals(priority)) {
+                            sleepOnly = true;
+                            collectDeviceData = false;
+                            includeLiveStatus = false;
+                        }
+                    }
                     JSONObject request = buildRequest(context, config, state,
-                            includeLiveStatus && round == 0);
+                            includeLiveStatus && round == 0, planOnly, sleepOnly);
                     active = buildActiveRequest(context, state, request, config);
                     state.put("activeRequest", active);
                     saveState(context, state);
                 }
+                // Snapshot the slice selection for this round: it is captured by the credential
+                // gate below and Java requires an effectively final binding.
+                final boolean planSliceRound = planOnly;
+                final boolean sleepSliceRound = sleepOnly;
                 JSONObject request = active.getJSONObject("body");
                 HttpResult result = exchange(config, request);
                 boolean[] resetApplied = {false};
@@ -176,14 +290,16 @@ final class CloudV3Sync {
                         responseOutcome[0] = SyncOutcome.PERMANENT_FAILURE;
                         return;
                     }
-                    applyResponse(context, state, responseActive, response, config);
+                    applyResponse(context, state, responseActive, response, config,
+                            !sleepSliceRound);
                     state.remove("activeRequest");
                     state.put("firstSuccessfulExchangeAt",
                             state.optLong("firstSuccessfulExchangeAt", 0L) == 0L
                                     ? System.currentTimeMillis()
                                     : state.optLong("firstSuccessfulExchangeAt"));
                     saveState(context, state);
-                    producedResults[0] = executeCommands(context, state,
+                    producedResults[0] = !planSliceRound && !sleepSliceRound
+                            && executeCommands(context, state,
                             response.optJSONArray("pendingCommands"));
                     saveState(context, state);
                 })) return SyncOutcome.TRANSIENT_FAILURE;
@@ -196,10 +312,10 @@ final class CloudV3Sync {
                     return SyncOutcome.PERMANENT_FAILURE;
                 }
                 if (responseOutcome[0] != null) return responseOutcome[0];
-                if (!shouldContinueDrain(state, producedResults[0])) break;
+                if (!shouldContinueDrain(state, producedResults[0], planOnly, sleepOnly)) break;
                 collectBeforeBuild = false;
             }
-            if (shouldContinueDrain(state, false)) {
+            if (shouldContinueDrain(state, false, false)) {
                 EncryptedWatchSyncWorker.schedule(context);
             }
             return SyncOutcome.SUCCESS;
@@ -229,12 +345,37 @@ final class CloudV3Sync {
         if (sleep != null) collectSleep(state, outbox, sleep.optJSONArray("records"));
     }
 
+    private static void collectCachedSleep(Context context, JSONObject state) throws Exception {
+        JSONObject cached = PhoneSleepRepository.load(context);
+        if (cached != null && "ready".equals(cached.optString("state"))) {
+            collectSleep(state, state.getJSONArray("outbox"), cached.optJSONArray("records"));
+        }
+    }
+
     static boolean shouldContinueDrain(JSONObject state, boolean producedCommandResults) {
+        return shouldContinueDrain(state, producedCommandResults, false, false);
+    }
+
+    static boolean shouldContinueDrain(JSONObject state, boolean producedCommandResults,
+                                       boolean planOnly) {
+        return shouldContinueDrain(state, producedCommandResults, planOnly, false);
+    }
+
+    static boolean shouldContinueDrain(JSONObject state, boolean producedCommandResults,
+                                       boolean planOnly, boolean sleepOnly) {
         if (producedCommandResults) return true;
         JSONArray outbox = state == null ? null : state.optJSONArray("outbox");
         JSONArray commands = state == null ? null : state.optJSONArray("commandResults");
+        if (planOnly) return hasKind(outbox, "plan");
+        if (sleepOnly) return hasKind(outbox, "sleep");
         return outbox != null && outbox.length() > 0
                 || commands != null && commands.length() > 0;
+    }
+
+    static String pendingPriority(JSONArray outbox) {
+        if (hasKind(outbox, "plan")) return "plan";
+        if (hasKind(outbox, "sleep")) return "sleep";
+        return "full";
     }
 
     private static void collectPlan(Context context, JSONObject state, JSONArray outbox)
@@ -242,11 +383,20 @@ final class CloudV3Sync {
         JSONObject local = PhonePlanLibrary.load(context);
         long localRevision = local.optLong("revision");
         long blockedRevision = state.optLong("planUploadBlockedRevision", Long.MIN_VALUE);
-        if (localRevision == blockedRevision) return;
         if (blockedRevision != Long.MIN_VALUE) state.remove("planUploadBlockedRevision");
         if (localRevision == state.optLong("lastPlanLocalRevision", Long.MIN_VALUE)
                 || hasKind(outbox, "plan")) return;
-        JSONObject library = cloudPlanLibrary(local);
+        JSONObject library;
+        try {
+            library = cloudPlanLibrary(local);
+        } catch (Exception invalid) {
+            // The library cannot be expressed to the server without either changing a training
+            // target or silently dropping a plan. Keep the local snapshot (including any pending
+            // delete) intact and report it as a contract conflict instead of uploading or
+            // deleting anything.
+            quarantinePlanLibrary(state, local, invalid);
+            return;
+        }
         JSONObject payload = new JSONObject()
                 .put("operationId", UUID.randomUUID().toString())
                 .put("expectedRevision", state.optLong("cloudPlanRevision", 0L))
@@ -259,33 +409,111 @@ final class CloudV3Sync {
                 .put("payload", payload));
     }
 
+    private static void quarantinePlanLibrary(JSONObject state, JSONObject local, Exception cause)
+            throws Exception {
+        JSONArray conflicts = state.getJSONArray("conflicts");
+        String detail = cause.getMessage() == null ? "local_contract_invalid"
+                : "local_contract_invalid:" + cause.getMessage();
+        for (int i = 0; i < conflicts.length(); i++) {
+            JSONObject existing = conflicts.optJSONObject(i);
+            if (existing != null && "plan".equals(existing.optString("kind"))
+                    && existing.optString("error", "").startsWith("local_contract_invalid")) {
+                existing.put("candidate", new JSONObject(local.toString()))
+                        .put("detail", detail)
+                        .put("recordedAt", System.currentTimeMillis());
+                return;
+            }
+        }
+        conflicts.put(new JSONObject().put("kind", "plan").put("entityId", "library")
+                .put("error", "local_contract_invalid")
+                .put("detail", detail)
+                .put("candidate", new JSONObject(local.toString()))
+                .put("recordedAt", System.currentTimeMillis()));
+    }
+
+    /**
+     * Projects the local snapshot onto exactly the shape the server validates. The server checks
+     * key sets with strict equality, so a single extra field on a stage rejects the entire
+     * exchange -- including a pending delete. Extra display/derived fields are dropped, but the
+     * semantic values (kind, unit, target, names, sort order) are preserved verbatim: we never
+     * coerce a target into RUN/TIME/1 and never drop a plan just to make the upload succeed. A
+     * genuinely invalid stage raises an error so the library is reported, not silently rewritten.
+     */
     static JSONObject cloudPlanLibrary(JSONObject local) throws Exception {
         JSONArray groups = new JSONArray();
+        Set<String> groupIds = new HashSet<>();
         JSONArray localGroups = local.optJSONArray("groups");
         if (localGroups != null) for (int i = 0; i < localGroups.length(); i++) {
             JSONObject value = localGroups.optJSONObject(i);
-            if (value == null) continue;
-            groups.put(new JSONObject().put("id", value.optString("id"))
-                    .put("name", value.optString("name"))
-                    .put("sortOrder", value.optInt("sortOrder", i)));
+            if (value == null) throw new IllegalArgumentException("group_not_object");
+            String id = value.optString("id");
+            String name = value.optString("name").trim();
+            if (!ENTITY_ID.matcher(id).matches() || name.isEmpty()) {
+                throw new IllegalArgumentException("invalid_group");
+            }
+            if (!groupIds.add(id)) throw new IllegalArgumentException("duplicate_group_id");
+            groups.put(new JSONObject().put("id", id).put("name", name)
+                    .put("sortOrder", Math.max(0, value.optInt("sortOrder", i))));
         }
         JSONArray plans = new JSONArray();
+        Set<String> planIds = new HashSet<>();
         JSONArray localPlans = local.optJSONArray("plans");
         if (localPlans != null) for (int i = 0; i < localPlans.length(); i++) {
             JSONObject value = localPlans.optJSONObject(i);
-            if (value == null) continue;
-            plans.put(new JSONObject().put("id", value.optString("id"))
-                    .put("name", value.optString("name"))
-                    .put("groupId", value.optString("groupId").isEmpty()
-                            ? JSONObject.NULL : value.optString("groupId"))
-                    .put("requirement", value.optString("requirement"))
+            if (value == null) throw new IllegalArgumentException("plan_not_object");
+            String id = value.optString("id");
+            String name = value.optString("name").trim();
+            JSONArray stages = projectPlanStages(value.optJSONArray("stages"));
+            if (!ENTITY_ID.matcher(id).matches() || name.isEmpty()) {
+                throw new IllegalArgumentException("invalid_plan");
+            }
+            if (!planIds.add(id)) throw new IllegalArgumentException("duplicate_plan_id");
+            String groupId = value.optString("groupId");
+            plans.put(new JSONObject().put("id", id).put("name", name)
+                    .put("groupId", groupIds.contains(groupId) ? groupId : JSONObject.NULL)
+                    .put("requirement", truncate(value.optString("requirement"), 2_000))
                     .put("sortOrder", Math.max(0, value.optInt("sortOrder", i)))
-                    .put("stages", new JSONArray(value.getJSONArray("stages").toString())));
+                    .put("stages", stages));
         }
         String selected = local.optString("selectedPlanId");
         return new JSONObject().put("schemaVersion", 1)
-                .put("selectedPlanId", selected.isEmpty() ? JSONObject.NULL : selected)
+                .put("selectedPlanId", planIds.contains(selected) ? selected : JSONObject.NULL)
                 .put("groups", groups).put("plans", plans);
+    }
+
+    /**
+     * Keeps exactly the server-accepted {@code kind}/{@code unit}/{@code target} on each stage,
+     * dropping any other keys. Values are preserved as-is; an unknown kind or unit, or a
+     * non-positive target, is reported as an error instead of being silently rewritten.
+     */
+    private static JSONArray projectPlanStages(JSONArray source) throws Exception {
+        if (source == null || source.length() == 0 || source.length() > 100) {
+            throw new IllegalArgumentException("invalid_stage_count");
+        }
+        JSONArray result = new JSONArray();
+        for (int i = 0; i < source.length(); i++) {
+            JSONObject stage = source.optJSONObject(i);
+            if (stage == null) throw new IllegalArgumentException("stage_not_object");
+            String kind = stage.optString("kind");
+            String unit = stage.optString("unit");
+            long target = stage.optLong("target", -1L);
+            if (!"RUN".equals(kind) && !"WALK".equals(kind) && !"REST".equals(kind)) {
+                throw new IllegalArgumentException("stage_kind");
+            }
+            if (!"DISTANCE".equals(unit) && !"TIME".equals(unit)) {
+                throw new IllegalArgumentException("stage_unit");
+            }
+            if (target < 1L || target > 1_000_000L) {
+                throw new IllegalArgumentException("stage_target");
+            }
+            result.put(new JSONObject().put("kind", kind).put("unit", unit).put("target", target));
+        }
+        return result;
+    }
+
+    private static String truncate(String value, int maximum) {
+        if (value == null) return "";
+        return value.length() > maximum ? value.substring(0, maximum) : value;
     }
 
     private static void collectWorkouts(JSONObject state, JSONArray outbox, JSONArray records)
@@ -294,9 +522,10 @@ final class CloudV3Sync {
         for (int i = 0; i < records.length(); i++) {
             JSONObject raw = records.optJSONObject(i);
             if (raw == null || containsForbidden(raw)) continue;
-            JSONObject workout = copyAllowed(raw, WORKOUT_FIELDS);
+            JSONObject workout;
+            try { workout = normalizeWorkout(raw); }
+            catch (Exception invalid) { continue; }
             String id = workout.optString("id");
-            if (id.isEmpty()) continue;
             String fingerprint = sha256(canonical(workout));
             if (fingerprint.equals(receipts.optString(id)) || hasEntity(outbox, "workout", id)) continue;
             JSONObject payload = new JSONObject().put("operationId", deterministicUuid(
@@ -398,6 +627,224 @@ final class CloudV3Sync {
         return record.put("sessions", normalizedSessions);
     }
 
+    /**
+     * Projects a watch workout onto exactly the fields the server accepts and rejects anything
+     * it cannot express. Returning clean data keeps one bad record from rejecting a whole batch.
+     */
+    static JSONObject normalizeWorkout(JSONObject source) throws Exception {
+        JSONObject workout = copyAllowed(source, WORKOUT_FIELDS);
+        for (String key : REQUIRED_WORKOUT_FIELDS) {
+            if (!workout.has(key)) throw new IllegalArgumentException("missing:" + key);
+        }
+        String id = workout.optString("id");
+        if (!ENTITY_ID.matcher(id).matches()) throw new IllegalArgumentException("invalid_id");
+        integerAt(workout, "schemaVersion", 1);
+        integerAt(workout, "startedAt", 0);
+        integerAt(workout, "endedAt", 0);
+        integerAt(workout, "durationMs", 0);
+        numberAt(workout, "distanceMeters");
+        integerAt(workout, "steps", 0);
+        numberAt(workout, "averageHeartRate");
+        boundedStringAt(workout, "plan", 100_000);
+        boundedStringAt(workout, "planName", 200);
+        boundedStringAt(workout, "planGroup", 200);
+        boundedStringAt(workout, "planRequirement", 2_000);
+        for (String key : OPTIONAL_WORKOUT_INTEGERS) {
+            if (workout.has(key)) integerAt(workout, key, 0);
+        }
+        for (String key : OPTIONAL_WORKOUT_NUMBERS) {
+            if (workout.has(key)) numberAt(workout, key);
+        }
+        workout.put("stageResults", normalizeStageResults(requireArray(workout, "stageResults")));
+        if (workout.has("splits")) {
+            workout.put("splits", normalizeSplits(requireArray(workout, "splits")));
+        }
+        if (workout.has("heartRateRange")) {
+            JSONObject range = workout.optJSONObject("heartRateRange");
+            if (range == null) throw new IllegalArgumentException("heartRateRange");
+            workout.put("heartRateRange", new JSONObject()
+                    .put("min", numberAt(range, "min")).put("max", numberAt(range, "max")));
+        }
+        if (workout.has("dataSourceSummary")) {
+            JSONObject summary = workout.optJSONObject("dataSourceSummary");
+            if (summary == null) throw new IllegalArgumentException("dataSourceSummary");
+            workout.put("dataSourceSummary", normalizeSourceSummary(summary));
+        }
+        return workout;
+    }
+
+    private static JSONArray normalizeStageResults(JSONArray source) throws Exception {
+        JSONArray result = new JSONArray();
+        for (int i = 0; i < source.length(); i++) {
+            JSONObject stage = source.optJSONObject(i);
+            if (stage == null) throw new IllegalArgumentException("stage_not_object");
+            String unit = stage.optString("unit");
+            if (!"DISTANCE".equals(unit) && !"TIME".equals(unit)) {
+                throw new IllegalArgumentException("stage_unit");
+            }
+            result.put(new JSONObject()
+                    .put("index", integerAt(stage, "index", 1))
+                    .put("name", boundedStringAt(stage, "name", 200))
+                    .put("unit", unit)
+                    .put("target", integerAt(stage, "target", 0))
+                    .put("completedAtMs", integerAt(stage, "completedAtMs", 0))
+                    .put("totalDistanceMeters", numberAt(stage, "totalDistanceMeters")));
+        }
+        return result;
+    }
+
+    private static JSONArray normalizeSplits(JSONArray source) throws Exception {
+        JSONArray result = new JSONArray();
+        for (int i = 0; i < source.length(); i++) {
+            JSONObject split = source.optJSONObject(i);
+            if (split == null) throw new IllegalArgumentException("split_not_object");
+            result.put(new JSONObject()
+                    .put("index", integerAt(split, "index", 1))
+                    .put("distanceMeters", numberAt(split, "distanceMeters"))
+                    .put("durationMs", integerAt(split, "durationMs", 0))
+                    .put("paceSecondsPerKm", numberAt(split, "paceSecondsPerKm")));
+        }
+        return result;
+    }
+
+    private static JSONObject normalizeSourceSummary(JSONObject source) throws Exception {
+        JSONObject result = new JSONObject();
+        for (String key : SOURCE_SUMMARY_FIELDS) {
+            result.put(key, boundedStringAt(source, key, 100));
+        }
+        return result;
+    }
+
+    /** Repairs or quarantines workout items already persisted by an older build. */
+    static boolean normalizePendingWorkoutOutbox(JSONObject state) throws Exception {
+        JSONArray source = state.getJSONArray("outbox");
+        JSONArray normalizedOutbox = new JSONArray();
+        boolean changed = false;
+        for (int i = 0; i < source.length(); i++) {
+            JSONObject item = source.getJSONObject(i);
+            if (!"workout".equals(item.optString("kind"))) {
+                normalizedOutbox.put(item);
+                continue;
+            }
+            try {
+                JSONObject payload = item.getJSONObject("payload");
+                JSONObject workout = normalizeWorkout(payload.getJSONObject("workout"));
+                String fingerprint = sha256(canonical(workout));
+                JSONObject normalizedPayload = new JSONObject()
+                        .put("operationId", deterministicUuid(
+                                "workout:" + workout.optString("id") + ":" + fingerprint))
+                        .put("workout", workout);
+                if (!canonical(payload).equals(canonical(normalizedPayload))) {
+                    item.put("payload", normalizedPayload).put("fingerprint", fingerprint);
+                    changed = true;
+                }
+                normalizedOutbox.put(item);
+            } catch (Exception invalid) {
+                state.getJSONArray("conflicts").put(new JSONObject()
+                        .put("kind", "workout").put("entityId", item.optString("entityId"))
+                        .put("error", "local_contract_invalid")
+                        .put("candidate", new JSONObject(item.toString()))
+                        .put("recordedAt", System.currentTimeMillis()));
+                changed = true;
+            }
+        }
+        if (changed) state.put("outbox", normalizedOutbox);
+        return changed;
+    }
+
+    /**
+     * Never let an unsendable item share a batch with anything else. The server rejects a whole
+     * exchange for one bad item, so quarantining up front is what keeps deletes and edits flowing.
+     */
+    static boolean quarantineUnsendableItems(JSONObject state) throws Exception {
+        JSONArray source = state.getJSONArray("outbox");
+        JSONArray remaining = new JSONArray();
+        boolean changed = false;
+        for (int i = 0; i < source.length(); i++) {
+            JSONObject item = source.getJSONObject(i);
+            if (contractSendable(item)) {
+                remaining.put(item);
+                continue;
+            }
+            state.getJSONArray("conflicts").put(new JSONObject()
+                    .put("kind", item.optString("kind")).put("entityId", item.optString("entityId"))
+                    .put("error", "local_contract_invalid")
+                    .put("candidate", new JSONObject(item.toString()))
+                    .put("recordedAt", System.currentTimeMillis()));
+            changed = true;
+        }
+        if (changed) state.put("outbox", remaining);
+        return changed;
+    }
+
+    static boolean contractSendable(JSONObject item) {
+        try {
+            JSONObject payload = item.getJSONObject("payload");
+            switch (item.optString("kind")) {
+                case "workout":
+                    normalizeWorkout(payload.getJSONObject("workout"));
+                    return true;
+                case "sleep":
+                    normalizeSleepRecord(payload.getJSONObject("record"));
+                    return true;
+                case "plan":
+                    return validPlanLibrary(payload.getJSONObject("library"));
+                default:
+                    return true;
+            }
+        } catch (Exception invalid) {
+            return false;
+        }
+    }
+
+    /**
+     * Delegates to the same projection used to build the payload, so this gate can never drift
+     * from what the server actually accepts. A library is sendable only when nothing is lost.
+     */
+    static boolean validPlanLibrary(JSONObject library) {
+        try {
+            if (library == null || library.optInt("schemaVersion") != 1) return false;
+            JSONObject projected = cloudPlanLibrary(library);
+            return projected.getJSONArray("groups").length()
+                            == library.getJSONArray("groups").length()
+                    && projected.getJSONArray("plans").length()
+                            == library.getJSONArray("plans").length();
+        } catch (Exception invalid) {
+            return false;
+        }
+    }
+
+    private static JSONArray requireArray(JSONObject source, String key) throws Exception {
+        JSONArray value = source.optJSONArray(key);
+        if (value == null) throw new IllegalArgumentException("not_array:" + key);
+        return value;
+    }
+
+    private static long integerAt(JSONObject source, String key, long minimum) throws Exception {
+        double parsed = numberAt(source, key);
+        if (parsed != Math.floor(parsed)) throw new IllegalArgumentException("not_integer:" + key);
+        if (parsed < minimum) throw new IllegalArgumentException("below_minimum:" + key);
+        return (long) parsed;
+    }
+
+    private static double numberAt(JSONObject source, String key) throws Exception {
+        Object value = source.get(key);
+        double parsed = value instanceof Number ? ((Number) value).doubleValue()
+                : value instanceof String ? Double.parseDouble((String) value) : Double.NaN;
+        if (!Double.isFinite(parsed) || parsed < 0d) {
+            throw new IllegalArgumentException("not_finite:" + key);
+        }
+        return parsed;
+    }
+
+    private static String boundedStringAt(JSONObject source, String key, int maximum)
+            throws Exception {
+        Object value = source.opt(key);
+        String parsed = value == null || value == JSONObject.NULL ? "" : String.valueOf(value);
+        if (parsed.length() > maximum) throw new IllegalArgumentException("too_long:" + key);
+        return parsed;
+    }
+
     private static JSONObject normalizeRange(JSONObject source, String key) throws Exception {
         JSONObject range = source.getJSONObject(key);
         return new JSONObject().put("minimum", nonNegativeDouble(range, "minimum"))
@@ -432,19 +879,24 @@ final class CloudV3Sync {
         return parsed;
     }
 
-    private static JSONObject buildRequest(Context context, CloudSyncCredentials.Config config,
-                                           JSONObject state, boolean includeLiveStatus)
+    static JSONObject buildRequest(Context context, CloudSyncCredentials.Config config,
+                                   JSONObject state, boolean includeLiveStatus, boolean planOnly,
+                                   boolean sleepOnly)
             throws Exception {
         JSONArray plans = new JSONArray(), workouts = new JSONArray(), sleep = new JSONArray();
         JSONArray outbox = state.getJSONArray("outbox");
         for (int i = 0; i < outbox.length(); i++) {
             JSONObject item = outbox.getJSONObject(i);
+            if (planOnly && !"plan".equals(item.optString("kind"))) continue;
+            if (sleepOnly && !"sleep".equals(item.optString("kind"))) continue;
             JSONArray target = "plan".equals(item.optString("kind")) ? plans
                     : "workout".equals(item.optString("kind")) ? workouts : sleep;
             if (target.length() < MAX_ITEMS) target.put(item.getJSONObject("payload"));
         }
-        JSONArray commandResults = first(state.getJSONArray("commandResults"), MAX_ITEMS);
-        JSONObject live = includeLiveStatus ? readLiveStatus(context) : null;
+        JSONArray commandResults = planOnly || sleepOnly ? new JSONArray()
+                : first(state.getJSONArray("commandResults"), MAX_ITEMS);
+        JSONObject live = includeLiveStatus && !planOnly && !sleepOnly
+                ? readLiveStatus(context) : null;
         return new JSONObject().put("protocolVersion", 3)
                 .put("requestId", UUID.randomUUID().toString())
                 .put("deviceId", config.deviceId())
@@ -452,6 +904,30 @@ final class CloudV3Sync {
                 .put("planChanges", plans).put("workoutFacts", workouts)
                 .put("sleepRecords", sleep).put("liveStatus", live == null ? JSONObject.NULL : live)
                 .put("commandResults", commandResults);
+    }
+
+    static boolean isPlanOnlyRequest(JSONObject active) {
+        return isSliceRequest(active, true, false);
+    }
+
+    static boolean isSleepOnlyRequest(JSONObject active) {
+        return isSliceRequest(active, false, true);
+    }
+
+    static boolean isSliceRequest(JSONObject active, boolean planOnly, boolean sleepOnly) {
+        if (active == null || planOnly == sleepOnly) return false;
+        JSONObject body = active.optJSONObject("body");
+        if (body == null) return false;
+        JSONArray plans = body.optJSONArray("planChanges");
+        JSONArray workouts = body.optJSONArray("workoutFacts");
+        JSONArray sleep = body.optJSONArray("sleepRecords");
+        JSONArray commands = body.optJSONArray("commandResults");
+        return plans != null && sleep != null && workouts != null
+                && (planOnly ? plans.length() > 0 : sleep.length() > 0)
+                && (planOnly ? sleep.length() == 0 : plans.length() == 0)
+                && workouts.length() == 0
+                && commands != null && commands.length() == 0
+                && (body.isNull("liveStatus") || !body.has("liveStatus"));
     }
 
     private static JSONObject buildActiveRequest(Context context, JSONObject state,
@@ -527,34 +1003,48 @@ final class CloudV3Sync {
 
     private static void applyResponse(Context context, JSONObject state, JSONObject active,
                                       JSONObject response,
-                                      CloudSyncCredentials.Config config) throws Exception {
+                                      CloudSyncCredentials.Config config,
+                                      boolean applyPlanLibrary) throws Exception {
         applyAcknowledgements(state, response);
         state.put("cursor", response.opt("nextCursor"));
 
         JSONObject cloudLibrary = response.optJSONObject("planLibrary");
         if (cloudLibrary != null) {
             long revision = cloudLibrary.optLong("revision");
-            String revisionDomain = revisionDomainId(response, config,
-                    PhonePlanLibrary.appliedCloudRevisionDomain(context));
-            String cloudFingerprint = cloudPlanFingerprint(cloudLibrary);
-            String planOutcome = planOutcome(active.getJSONObject("body"), response);
-            long previousCloudRevision = active.optLong("cloudPlanRevisionAtBuild", -1L);
             state.put("cloudPlanRevision", revision);
-            PhonePlanLibrary.CloudApplyResult applied = PhonePlanLibrary.applyCloudV3IfUnchanged(
-                    context, cloudLibrary, revisionDomain, cloudFingerprint,
-                    active.optLong("planLocalRevision", Long.MIN_VALUE),
-                    active.optString("planLocalFingerprint"));
-            if (applied != null) {
-                JSONObject saved = applied.library;
-                state.put("lastPlanLocalRevision", saved.optLong("revision"))
-                        .remove("planUploadBlockedRevision");
-                // Projection metadata is committed with the Phone snapshot. The independent
-                // worker rebuilds a missing journal and never blocks pending cloud commands.
-                PhonePlanProjectionWorker.schedule(context);
-            } else if ("conflict".equals(planOutcome)
-                    || (planOutcome.isEmpty() && previousCloudRevision != revision)) {
-                JSONObject current = PhonePlanLibrary.load(context);
-                state.put("planUploadBlockedRevision", current.optLong("revision"));
+            if (applyPlanLibrary) {
+                String revisionDomain = revisionDomainId(response, config,
+                        PhonePlanLibrary.appliedCloudRevisionDomain(context));
+                String cloudFingerprint = cloudPlanFingerprint(cloudLibrary);
+                String planOutcome = planOutcome(active.getJSONObject("body"), response);
+                long previousCloudRevision = active.optLong("cloudPlanRevisionAtBuild", -1L);
+                PhonePlanLibrary.CloudApplyResult applied = PhonePlanLibrary.applyCloudV3IfUnchanged(
+                        context, cloudLibrary, revisionDomain, cloudFingerprint,
+                        active.optLong("planLocalRevision", Long.MIN_VALUE),
+                        active.optString("planLocalFingerprint"));
+                if (applied != null) {
+                    JSONObject saved = applied.library;
+                    state.put("lastPlanLocalRevision", saved.optLong("revision"))
+                            .remove("planUploadBlockedRevision");
+                    if (applied.rebasedLocalDeletes && "conflict".equals(planOutcome)) {
+                        // The old request has already been removed by applyAcknowledgements().
+                        // Rebase keeps the user's delete on the local snapshot, but that snapshot
+                        // must also be sent again against the revision returned by the authority;
+                        // otherwise the tombstone is stranded locally and the deleted plan comes
+                        // back on the next cloud replace.
+                        enqueuePlanRetry(state, saved, revision);
+                    }
+                    // Projection metadata is committed with the Phone snapshot. The independent
+                    // worker rebuilds a missing journal and never blocks pending cloud commands.
+                    PhonePlanProjectionWorker.schedule(context);
+                } else if ("conflict".equals(planOutcome)
+                        || (planOutcome.isEmpty() && previousCloudRevision != revision)) {
+                    JSONObject current = PhonePlanLibrary.load(context);
+                    // The request was built from an older local snapshot. Do not block at that
+                    // revision: the local delete/edit is the user's latest intent and must be
+                    // retried against the cloud revision returned by this response.
+                    requeueCurrentPlanAfterRace(state, active, current, revision);
+                }
             }
         }
         Set<String> commandAckIds = new HashSet<>();
@@ -655,6 +1145,54 @@ final class CloudV3Sync {
 
     static String planFingerprint(JSONObject local) throws Exception {
         return sha256(canonical(cloudPlanLibrary(local)));
+    }
+
+    /** Requeues a rebased local plan snapshot against the revision returned by the authority. */
+    static void enqueuePlanRetry(JSONObject state, JSONObject local, long cloudRevision)
+            throws Exception {
+        JSONArray outbox = state.getJSONArray("outbox");
+        if (hasKind(outbox, "plan")) return;
+        long localRevision = local.optLong("revision");
+        JSONObject projected = cloudPlanLibrary(local);
+        JSONObject payload = new JSONObject()
+                .put("operationId", UUID.randomUUID().toString())
+                .put("expectedRevision", Math.max(0L, cloudRevision))
+                .put("library", projected);
+        outbox.put(new JSONObject().put("kind", "plan")
+                .put("entityId", "library")
+                .put("fingerprint", String.valueOf(localRevision))
+                .put("localRevision", localRevision)
+                .put("localFingerprint", planFingerprint(local))
+                .put("payload", payload));
+    }
+
+    static void requeueCurrentPlanAfterRace(JSONObject state, JSONObject active, JSONObject local,
+                                            long cloudRevision) throws Exception {
+        removePlanOperation(state, planOperationId(active));
+        state.remove("planUploadBlockedRevision");
+        enqueuePlanRetry(state, local, cloudRevision);
+    }
+
+    private static String planOperationId(JSONObject active) {
+        JSONObject body = active == null ? null : active.optJSONObject("body");
+        JSONArray changes = body == null ? null : body.optJSONArray("planChanges");
+        JSONObject change = changes == null || changes.length() == 0
+                ? null : changes.optJSONObject(0);
+        return change == null ? "" : change.optString("operationId");
+    }
+
+    private static void removePlanOperation(JSONObject state, String operationId)
+            throws Exception {
+        if (operationId == null || operationId.isEmpty()) return;
+        JSONArray source = state.getJSONArray("outbox"), remaining = new JSONArray();
+        for (int index = 0; index < source.length(); index++) {
+            JSONObject item = source.getJSONObject(index);
+            JSONObject payload = item.optJSONObject("payload");
+            if ("plan".equals(item.optString("kind")) && payload != null
+                    && operationId.equals(payload.optString("operationId"))) continue;
+            remaining.put(item);
+        }
+        state.put("outbox", remaining);
     }
 
     private static String planOutcome(JSONObject request, JSONObject response) {
@@ -1028,6 +1566,7 @@ final class CloudV3Sync {
     }
 
     private static boolean hasKind(JSONArray outbox, String kind) {
+        if (outbox == null) return false;
         for (int i = 0; i < outbox.length(); i++) if (kind.equals(
                 outbox.optJSONObject(i) == null ? "" : outbox.optJSONObject(i).optString("kind"))) return true;
         return false;

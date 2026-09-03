@@ -14,7 +14,9 @@ final class WorkoutRecord {
     long pausedDurationMs, planCompletedActiveMs, planCompletedWallTime;
     double distanceMeters;
     double planDistanceMeters, freeRecordingDistanceMeters, maxSmoothedSpeedMps;
-    int steps, averageHeartRate;
+    int steps, averageHeartRate, calories;
+    boolean synthetic;
+    JSONArray stepTimeline = new JSONArray();
     int routePointCount;
     boolean routeTruncated;
     JSONObject distanceBySourceMeters = new JSONObject();
@@ -30,6 +32,8 @@ final class WorkoutRecord {
         JSONObject json = new JSONObject();
         json.put("schemaVersion", SCHEMA_VERSION).put("id", id).put("startedAt", startedAt).put("endedAt", endedAt)
                 .put("durationMs", durationMs).put("distanceMeters", finite(distanceMeters)).put("steps", steps)
+                .put("calories", Math.max(0, calories)).put("synthetic", synthetic)
+                .put("stepTimeline", stepTimeline == null ? new JSONArray() : stepTimeline)
                 .put("averageHeartRate", averageHeartRate).put("plan", plan == null ? "" : plan)
                 .put("planName", planName).put("planGroup", planGroup).put("planRequirement", planRequirement)
                 .put("pausedDurationMs", pausedDurationMs).put("elapsedDurationMs", Math.max(durationMs, endedAt - startedAt))
@@ -86,7 +90,9 @@ final class WorkoutRecord {
         WorkoutRecord record = new WorkoutRecord();
         record.id = json.getString("id"); record.startedAt = json.optLong("startedAt"); record.endedAt = json.optLong("endedAt");
         record.durationMs = json.optLong("durationMs"); record.distanceMeters = finite(json.optDouble("distanceMeters", 0d)); record.steps = json.optInt("steps");
-        record.averageHeartRate = json.optInt("averageHeartRate"); record.plan = json.optString("plan"); record.planName=json.optString("planName");record.planGroup=json.optString("planGroup");record.planRequirement=json.optString("planRequirement");
+        record.averageHeartRate = json.optInt("averageHeartRate"); record.calories = Math.max(0, json.optInt("calories")); record.synthetic = json.optBoolean("synthetic");
+        record.stepTimeline = json.optJSONArray("stepTimeline"); if (record.stepTimeline == null) record.stepTimeline = new JSONArray();
+        record.plan = json.optString("plan"); record.planName=json.optString("planName");record.planGroup=json.optString("planGroup");record.planRequirement=json.optString("planRequirement");
         record.pausedDurationMs=json.optLong("pausedDurationMs");record.planCompletedActiveMs=json.optLong("planCompletedActiveMs");record.planCompletedWallTime=json.optLong("planCompletedWallTime");
         record.planDistanceMeters=finite(json.optDouble("planDistanceMeters",0d));record.freeRecordingDistanceMeters=finite(json.optDouble("freeRecordingDistanceMeters",0d));record.maxSmoothedSpeedMps=finite(json.optDouble("maxSmoothedSpeedMps",0d));
         record.routePointCount=json.optInt("routePointCount");record.routeTruncated=json.optBoolean("routeTruncated");

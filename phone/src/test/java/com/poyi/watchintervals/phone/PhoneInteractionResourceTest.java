@@ -39,7 +39,9 @@ public class PhoneInteractionResourceTest {
         assertTrue(plan.contains("SegmentedChoice("));
         assertTrue(plan.contains("viewModel.selectStageKind(index, it)"));
         assertTrue(plan.contains("viewModel.selectStageUnit(index, it)"));
-        assertTrue(plan.contains("enabled = group.plans.isEmpty()"));
+        assertTrue(plan.contains("删除分组及 ${group.plans.size} 个安排"));
+        assertTrue(plan.contains("全部删除"));
+        assertTrue(plan.contains("viewModel.deleteGroup(group.id)"));
         assertTrue(plan.contains("PlanGroupPicker("));
         assertTrue(plan.contains("viewModel.selectDraftGroup(id, name)"));
         assertFalse(plan.contains("onValueChange = { viewModel.updateDraft(group = it) }"));

@@ -122,7 +122,7 @@ const TOOLS = [
   { name: 'watch_get_latest_sleep', scope: WATCH_READ_SCOPE, description: 'Read the latest cloud sleep record.', inputSchema: EMPTY_SCHEMA },
   { name: 'watch_summarize_sleep', scope: WATCH_READ_SCOPE, description: 'Summarize the latest 31 cloud sleep records.', inputSchema: EMPTY_SCHEMA },
   { name: 'watch_upsert_plan_group', scope: WATCH_WRITE_SCOPE, description: 'Create or replace a plan group using expected plan-library revision.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, group: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, sortOrder: { type: 'integer', minimum: 0 } }, required: ['id', 'name', 'sortOrder'], additionalProperties: false } }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'group'], additionalProperties: false } },
-  { name: 'watch_delete_plan_group', scope: WATCH_WRITE_SCOPE, description: 'Delete an empty plan group using expected plan-library revision. A non-empty group is never cascaded.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, groupId: ID_SCHEMA }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'groupId'], additionalProperties: false } },
+  { name: 'watch_delete_plan_group', scope: WATCH_WRITE_SCOPE, description: 'Delete a plan group and all plans in it using expected plan-library revision. This is an explicit cascade delete; other groups and plans are preserved.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, groupId: ID_SCHEMA }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'groupId'], additionalProperties: false } },
   { name: 'watch_upsert_plan', scope: WATCH_WRITE_SCOPE, description: 'Create or replace one plan, including all ordered stages, using expected plan-library revision.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, plan: PLAN_SCHEMA }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'plan'], additionalProperties: false } },
   { name: 'watch_move_plan', scope: WATCH_WRITE_SCOPE, description: 'Move one existing plan to a plan group or ungrouped position without changing its stages.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, planId: ID_SCHEMA, groupId: { anyOf: [ID_SCHEMA, { type: 'null' }] }, sortOrder: { type: 'integer', minimum: 0 } }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'planId', 'groupId', 'sortOrder'], additionalProperties: false } },
   { name: 'watch_replace_plan_stages', scope: WATCH_WRITE_SCOPE, description: 'Replace every ordered stage of one existing daily plan.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, planId: ID_SCHEMA, stages: { type: 'array', minItems: 1, maxItems: 100, items: STAGE_SCHEMA } }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'planId', 'stages'], additionalProperties: false } },
@@ -295,14 +295,20 @@ class WatchMcpServer {
         if (index >= 0) groups[index] = groupValue
         else groups.push(groupValue)
       } else if (name === 'watch_delete_plan_group') {
-        if (plans.some((plan) => plan.groupId === args.groupId)) {
-          return text({ outcome: 'conflict', error: 'group_not_empty', groupId: args.groupId })
-        }
         const index = groups.findIndex((group) => group.id === args.groupId)
         if (index < 0) {
           return text({ outcome: 'conflict', error: 'group_not_found', groupId: args.groupId })
         }
         groups.splice(index, 1)
+        const removedPlanIds = new Set(
+          plans.filter((plan) => plan.groupId === args.groupId).map((plan) => String(plan.id)),
+        )
+        for (let index = plans.length - 1; index >= 0; index--) {
+          if (removedPlanIds.has(String(plans[index].id))) plans.splice(index, 1)
+        }
+        if (selectedPlanId !== null && removedPlanIds.has(selectedPlanId)) {
+          selectedPlanId = plans.length > 0 ? String(plans[0].id) : null
+        }
       } else if (name === 'watch_upsert_plan') {
         if (!isRecord(args.plan)) throw new Error('invalid_plan')
         const planValue = args.plan

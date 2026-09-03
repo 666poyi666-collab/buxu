@@ -310,8 +310,17 @@ public class WarmupActivity extends WatchActivity {
         startButton.setEnabled(false);
         countdownValue = 0;
         lastRenderedCountdown = 0;
+        // Deliberate, countdown-scoped exception to the battery screen-policy: the countdown is
+        // only a few seconds and must stay visible while the user raises the wrist, so it never
+        // dims or blanks mid-count. Released the moment the countdown ends or is cancelled.
+        setCountdownScreenOn(true);
         handler.removeCallbacks(countdownTick);
         handler.post(countdownTick);
+    }
+
+    private void setCountdownScreenOn(boolean on) {
+        if (on) getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 
     private final Runnable countdownTick = new Runnable() {
@@ -343,8 +352,11 @@ public class WarmupActivity extends WatchActivity {
     }
 
     private void showCountdownFrame(String value, boolean haptic) {
+        boolean firstShow = countdownOverlay.getVisibility() != View.VISIBLE;
         Ui.setTextIfChanged(countdownOverlay, value);
-        Ui.popIn(countdownOverlay);
+        // Pop the overlay in only once. Re-running the entrance on every digit resets the
+        // full-screen scrim to 18% alpha and a 0.72 scale, which reads as a screen flash.
+        if (firstShow) Ui.popIn(countdownOverlay);
         if (haptic) countdownOverlay.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
     }
 
@@ -357,6 +369,7 @@ public class WarmupActivity extends WatchActivity {
     private void cancelCountdown() {
         handler.removeCallbacks(countdownTick);
         if (service != null) service.cancelPreparationCountdown();
+        setCountdownScreenOn(false);
         pauseCountdownUi();
     }
 
@@ -386,6 +399,7 @@ public class WarmupActivity extends WatchActivity {
 
     private void hideCountdownOverlay() {
         if (countdownOverlay == null) return;
+        setCountdownScreenOn(false);
         countdownOverlay.setVisibility(View.GONE);
         countdownValue = 0;
         lastRenderedCountdown = 0;

@@ -540,9 +540,8 @@ private fun PlanGroupCard(
                         text = {
                             Text(
                                 if (group.plans.isEmpty()) "删除空分组"
-                                else "分组内有 ${group.plans.size} 个安排",
-                                color = if (group.plans.isEmpty()) PhoneColor.Danger
-                                else PhoneColor.TextDim
+                                else "删除分组及 ${group.plans.size} 个安排",
+                                color = PhoneColor.Danger
                             )
                         },
                         leadingIcon = {
@@ -552,7 +551,6 @@ private fun PlanGroupCard(
                             menuExpanded = false
                             pendingDelete = true
                         },
-                        enabled = group.plans.isEmpty()
                     )
                 }
             }
@@ -566,9 +564,14 @@ private fun PlanGroupCard(
     }
     if (pendingDelete) {
         ConfirmDialog(
-            title = "删除“${group.name}”？",
-            message = "仅删除这个空分组，不会删除或移动任何安排。",
-            confirmText = "删除",
+            title = if (group.plans.isEmpty()) "删除“${group.name}”？"
+            else "删除“${group.name}”及其中 ${group.plans.size} 个安排？",
+            message = if (group.plans.isEmpty()) {
+                "仅删除这个空分组。"
+            } else {
+                "这会同时删除该分组和其中的 ${group.plans.size} 个安排，且无法恢复；其他分组和安排不受影响。"
+            },
+            confirmText = if (group.plans.isEmpty()) "删除" else "全部删除",
             onConfirm = {
                 pendingDelete = false
                 viewModel.deleteGroup(group.id)
@@ -795,6 +798,7 @@ private fun PlanDetail(
                 onClick = { pendingDelete = true },
                 action = PhoneAction.Danger,
                 modifier = Modifier.fillMaxWidth(),
+                contentDescription = "删除这个安排",
                 icon = PhoneIcons.Delete
             )
         }
@@ -1237,6 +1241,7 @@ internal fun ConfirmDialog(
     title: String,
     message: String,
     confirmText: String,
+    confirmAction: PhoneAction = PhoneAction.Danger,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1261,7 +1266,7 @@ internal fun ConfirmDialog(
                     PhoneButton(
                         text = confirmText,
                         onClick = onConfirm,
-                        action = PhoneAction.Danger,
+                        action = confirmAction,
                         modifier = Modifier.weight(1f)
                     )
                 }

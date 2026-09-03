@@ -289,7 +289,11 @@ public class WatchWorkoutResourceTest {
         assertTrue(serviceSource.contains("cancelSingleFixRequests()"));
         assertTrue(serviceSource.contains("clockHandler.postDelayed(this, 1_000L)"));
         assertTrue(serviceSource.contains("if (wakeLock != null && wakeLock.isHeld()) wakeLock.release()"));
-        assertFalse(warmup.contains("FLAG_KEEP_SCREEN_ON"));
+        // The battery screen-policy forbids a blanket keep-screen-on for the workout surface, but
+        // a brief, countdown-scoped exception is allowed (the short countdown never blanks).
+        assertTrue(warmup.contains("FLAG_KEEP_SCREEN_ON"));
+        assertTrue(warmup.contains("setCountdownScreenOn(true)"));
+        assertTrue(warmup.contains("setCountdownScreenOn(false)"));
         assertTrue(warmup.contains("service.startPreparationCountdown()"));
         assertTrue(warmup.contains("preparationCountdownRemainingMs()"));
         assertFalse(warmup.contains("postDelayed(countdownTick, 850L)"));

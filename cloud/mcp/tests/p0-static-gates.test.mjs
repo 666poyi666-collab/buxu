@@ -139,7 +139,7 @@ test('production declares exact OAuth and authority resources without capability
   assert.match(productionConfigText,
     /"pattern"\s*:\s*"watch-staging\.pyzzgk\.dpdns\.org"\s*,\s*"custom_domain"\s*:\s*true/)
   assert.match(productionConfigText,
-    /"BUILD_COMMIT"\s*:\s*"396f57915d308d61f0106cdb93b9375c01f6da84"/)
+    /"BUILD_COMMIT"\s*:\s*"44541e938d0e3b37b62391b48e63b7191323b37a"/)
   assert.match(productionConfigText,
     /"OAUTH_AUDIENCE"\s*:\s*"https:\/\/watch-mcp\.focuslink-poyi-6465e9\.workers\.dev\/mcp"/)
   assert.match(productionConfigText,
@@ -160,6 +160,7 @@ test('production phone provisioning keeps the device token out of output and per
   assert.match(script, /SHA256/)
   assert.match(script, /token_hash/)
   assert.match(script, /https:\/\/watch-staging\.pyzzgk\.dpdns\.org\/sync\/v3\/exchange/)
+  assert.doesNotMatch(script, /watch-mcp-staging\.focuslink-poyi-6465e9\.workers\.dev\/sync\/v3\/exchange/)
   assert.match(script, /credentialsExposed\s*=\s*\$false/)
   assert.match(script, /\[Array\]::Clear/)
   assert.doesNotMatch(script, /Write-(?:Host|Output).*(?:\$token|\$suffix)/i)

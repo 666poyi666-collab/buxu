@@ -231,6 +231,7 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
                     if ("ready" == value.optString("state")) {
                         sleepHadRecords = (value.optJSONArray("records")?.length() ?: 0) > 0
                         sleepCandidate = PhoneSleepRepository.mergeAndSave(app, value, System.currentTimeMillis())
+                        CloudSnapshotSync.syncSleepAsync(app)
                     }
                 } catch (sleepError: Exception) {
                     android.util.Log.w("PhoneViewModel", "Sleep refresh did not block the main sync", sleepError)
@@ -701,7 +702,8 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
                     _state.update { it.copy(plan = it.plan.copy(route = PlanRoute.Library)) }
                     refreshPlans()
                 }
-                queueLibrarySync("安排已删除并同步")
+                _events.emit(PhoneEvent.Toast("安排已删除"))
+                viewModelScope.launch(Dispatchers.IO) { queueLibrarySync("安排已删除并同步") }
             } catch (error: Exception) {
                 _events.emit(PhoneEvent.Toast("删除安排失败 · ${userError(error)}"))
             }
@@ -752,14 +754,13 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 PhonePlanLibrary.deleteGroup(app, groupId)
                 withContext(Dispatchers.Main) { refreshPlans() }
-                queueLibrarySync("训练计划已删除")
+                _events.emit(PhoneEvent.Toast("分组及其中安排已删除"))
+                // The watch/cloud sync must NOT block the single-slot ioScope; otherwise a second
+                // delete right after this one waits behind a slow transport and looks dead. Run the
+                // sync on a background scope and let the next delete proceed immediately.
+                viewModelScope.launch(Dispatchers.IO) { queueLibrarySync("分组及其中安排已删除") }
             } catch (error: Exception) {
-                val message = if (error.message?.contains("group_not_empty") == true) {
-                    "分组内还有安排，未执行删除"
-                } else {
-                    "删除分组失败 · ${userError(error)}"
-                }
-                _events.emit(PhoneEvent.Toast(message))
+                _events.emit(PhoneEvent.Toast("删除分组失败 · ${userError(error)}"))
             }
         }
     }
@@ -774,7 +775,7 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
         val connected = connection
         val cloudConfigured = CloudSyncCredentials.readyForCloudV3(app)
         try {
-            val cloudSynced = cloudConfigured && CloudSnapshotSync.sync(app)
+            val cloudSynced = cloudConfigured && CloudSnapshotSync.syncPlans(app)
             PhoneSyncOutbox.ensureCurrentLibrary(app)
             val result = if (connected == null) {
                 JSONObject().put("state", "pending")
@@ -804,21 +805,20 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } else {
                 com.poyi.watchintervals.phone.PhonePlanProjectionWorker.schedule(app)
+                val note = when {
+                    !cloudConfigured ->
+                        "本机已保存 · 云端未连接，其他设备不会同步"
+                    !cloudSynced ->
+                        "本机已保存 · 云端同步失败，已安排重试"
+                    else ->
+                        "云端和手机已同步 · 等待手表连接"
+                }
                 withContext(Dispatchers.Main) {
                     _state.update {
-                        it.copy(sync = it.sync.copy(
-                            message = when {
-                                !cloudConfigured ->
-                                    "本机已保存 · 云端未连接，ChatGPT 不会收到修改"
-                                !cloudSynced ->
-                                    "本机已保存 · 云端同步失败，已安排重试"
-                                else ->
-                                    "云端和手机已同步 · 等待手表连接"
-                            },
-                            tone = Tone.Caution
-                        ))
+                        it.copy(sync = it.sync.copy(message = note, tone = Tone.Caution))
                     }
                 }
+                _events.emit(PhoneEvent.Toast(note))
             }
         } catch (error: Exception) {
             com.poyi.watchintervals.phone.PhonePlanProjectionWorker.schedule(app)
@@ -1013,6 +1013,7 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
                     if ("ready" == result.optString("state")) {
                         val received = (result.optJSONArray("records")?.length() ?: 0) > 0
                         val saved = PhoneSleepRepository.mergeAndSave(app, result, System.currentTimeMillis())
+                        CloudSnapshotSync.syncSleepAsync(app)
                         withContext(Dispatchers.Main) {
                             _state.update {
                                 it.copy(

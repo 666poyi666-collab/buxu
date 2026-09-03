@@ -13,6 +13,77 @@ public class CloudV3SyncTest {
         assertEquals(5, CloudV3Sync.maxItemsPerExchange());
     }
 
+    @Test public void planPriorityExchangeLeavesHealthBackfillOutOfTheRequest() throws Exception {
+        JSONObject plan = new JSONObject().put("kind", "plan").put("entityId", "library")
+                .put("payload", new JSONObject().put("operationId",
+                        "00000000-0000-4000-8000-000000000001")
+                        .put("expectedRevision", 40).put("library", cloudLibrary("Deleted")));
+        JSONObject workout = new JSONObject().put("kind", "workout").put("entityId", "workout-1")
+                .put("payload", new JSONObject().put("operationId",
+                        "00000000-0000-4000-8000-000000000002")
+                        .put("workout", new JSONObject().put("id", "workout-1")));
+        JSONObject sleep = new JSONObject().put("kind", "sleep").put("entityId", "sleep-1")
+                .put("payload", new JSONObject().put("operationId",
+                        "00000000-0000-4000-8000-000000000003")
+                        .put("recordId", "sleep-1").put("sourceRevision", "source")
+                        .put("record", new JSONObject()));
+        JSONObject state = emptyState().put("outbox", new JSONArray()
+                .put(plan).put(workout).put(sleep))
+                .put("commandResults", new JSONArray().put(new JSONObject().put("commandId", "command-1")));
+        CloudSyncCredentials.Config config = new CloudSyncCredentials.Config(
+                "https://watch.example/sync/v3/exchange",
+                "dw1.device-one.abcdefghijklmnopqrstuvwxyz123456");
+
+        JSONObject request = CloudV3Sync.buildRequest(null, config, state, true, true, false);
+
+        assertEquals(1, request.getJSONArray("planChanges").length());
+        assertEquals(0, request.getJSONArray("workoutFacts").length());
+        assertEquals(0, request.getJSONArray("sleepRecords").length());
+        assertEquals(0, request.getJSONArray("commandResults").length());
+        assertTrue(request.isNull("liveStatus"));
+        assertTrue(CloudV3Sync.isPlanOnlyRequest(
+                new JSONObject().put("body", request)));
+        assertTrue(CloudV3Sync.shouldContinueDrain(state, false, true));
+
+        state.getJSONArray("outbox").remove(0);
+        assertFalse(CloudV3Sync.shouldContinueDrain(state, false, true));
+    }
+
+    @Test public void sleepPriorityExchangeLeavesPlanAndWorkoutOutOfTheRequest() throws Exception {
+        JSONObject plan = new JSONObject().put("kind", "plan").put("entityId", "library")
+                .put("payload", new JSONObject().put("operationId",
+                        "00000000-0000-4000-8000-000000000011")
+                        .put("expectedRevision", 40).put("library", cloudLibrary("Plan")));
+        JSONObject workout = new JSONObject().put("kind", "workout").put("entityId", "workout-1")
+                .put("payload", new JSONObject().put("operationId",
+                        "00000000-0000-4000-8000-000000000012")
+                        .put("workout", new JSONObject().put("id", "workout-1")));
+        JSONObject sleep = new JSONObject().put("kind", "sleep").put("entityId", "sleep-1")
+                .put("payload", new JSONObject().put("operationId",
+                        "00000000-0000-4000-8000-000000000013")
+                        .put("recordId", "sleep-1").put("sourceRevision", "source")
+                        .put("record", new JSONObject()));
+        JSONObject state = emptyState().put("outbox", new JSONArray()
+                .put(plan).put(workout).put(sleep));
+        CloudSyncCredentials.Config config = new CloudSyncCredentials.Config(
+                "https://watch.example/sync/v3/exchange",
+                "dw1.device-one.abcdefghijklmnopqrstuvwxyz123456");
+
+        JSONObject request = CloudV3Sync.buildRequest(null, config, state, true, false, true);
+
+        assertEquals(0, request.getJSONArray("planChanges").length());
+        assertEquals(0, request.getJSONArray("workoutFacts").length());
+        assertEquals(1, request.getJSONArray("sleepRecords").length());
+        assertEquals(0, request.getJSONArray("commandResults").length());
+        assertTrue(request.isNull("liveStatus"));
+        assertTrue(CloudV3Sync.isSleepOnlyRequest(
+                new JSONObject().put("body", request)));
+        assertTrue(CloudV3Sync.shouldContinueDrain(state, false, false, true));
+
+        state.getJSONArray("outbox").remove(2);
+        assertFalse(CloudV3Sync.shouldContinueDrain(state, false, false, true));
+    }
+
     @Test public void normalizesLegacyEndpointToV3AndWebSocketChannel() throws Exception {
         assertEquals("https://watch.example/sync/v3/exchange",
                 CloudV3Sync.exchangeEndpoint("https://watch.example/sync/v2/exchange"));
@@ -177,6 +248,55 @@ public class CloudV3SyncTest {
                 CloudV3Sync.cloudPlanFingerprint(cloudLibrary("Before request")));
     }
 
+    @Test public void rebasedLocalDeleteIsRequeuedAgainstTheReturnedCloudRevision()
+            throws Exception {
+        JSONObject local = localLibrary(41, "Cloud snapshot with local delete")
+                .put("deletedPlanIds", new JSONArray().put(new JSONObject()
+                        .put("id", "plan-1").put("deletedAt", 1234)
+                        .put("acknowledged", false)));
+        local.getJSONArray("plans").remove(0);
+        local.put("selectedPlanId", "");
+        JSONObject state = emptyState();
+
+        CloudV3Sync.enqueuePlanRetry(state, local, 17);
+
+        assertEquals(1, state.getJSONArray("outbox").length());
+        JSONObject item = state.getJSONArray("outbox").getJSONObject(0);
+        assertEquals("plan", item.getString("kind"));
+        assertEquals(17, item.getJSONObject("payload").getLong("expectedRevision"));
+        assertEquals(0, item.getJSONObject("payload").getJSONObject("library")
+                .getJSONArray("plans").length());
+        assertEquals(41, item.getLong("localRevision"));
+        assertEquals(CloudV3Sync.planFingerprint(local), item.getString("localFingerprint"));
+    }
+
+    @Test public void localPlanChangeDuringExchangeReplacesStaleRequestInsteadOfBlocking()
+            throws Exception {
+        JSONObject stale = new JSONObject().put("kind", "plan").put("entityId", "library")
+                .put("payload", new JSONObject().put("operationId", "stale-plan-operation")
+                        .put("expectedRevision", 3).put("library", cloudLibrary("Stale")));
+        JSONObject state = emptyState().put("planUploadBlockedRevision", 44)
+                .put("outbox", new JSONArray().put(stale));
+        JSONObject active = new JSONObject().put("body", new JSONObject().put("planChanges",
+                new JSONArray().put(new JSONObject().put("operationId", "stale-plan-operation"))));
+        JSONObject current = localLibrary(45, "Latest local deletion");
+        current.getJSONArray("plans").remove(0);
+        current.put("selectedPlanId", "").put("deletedPlanIds", new JSONArray().put(
+                new JSONObject().put("id", "plan-1").put("deletedAt", 1234)
+                        .put("acknowledged", false)));
+
+        CloudV3Sync.requeueCurrentPlanAfterRace(state, active, current, 44);
+
+        assertFalse(state.has("planUploadBlockedRevision"));
+        assertEquals(1, state.getJSONArray("outbox").length());
+        JSONObject retry = state.getJSONArray("outbox").getJSONObject(0);
+        assertEquals(44, retry.getJSONObject("payload").getLong("expectedRevision"));
+        assertEquals(45, retry.getLong("localRevision"));
+        assertEquals(CloudV3Sync.planFingerprint(current), retry.getString("localFingerprint"));
+        assertEquals(0, retry.getJSONObject("payload").getJSONObject("library")
+                .getJSONArray("plans").length());
+    }
+
     @Test public void cloudAndPhoneFingerprintsShareNullAndSortOrderSemantics()
             throws Exception {
         JSONObject cloud = cloudLibrary("Ungrouped");
@@ -270,6 +390,78 @@ public class CloudV3SyncTest {
         assertEquals("library", state.getJSONArray("conflicts").getJSONObject(1)
                 .getString("entityId"));
         assertFalse(CloudV3Sync.pruneResolvedLocalSleepConflicts(state));
+    }
+
+    @Test public void workoutSplitsAreProjectedToTheAcceptedContractShape() throws Exception {
+        JSONObject workout = baseWorkout()
+                .put("splits", new JSONArray().put(new JSONObject().put("index", 1)
+                        .put("distanceMeters", 1000).put("durationMs", 300000)
+                        .put("paceSecondsPerKm", 300).put("steps", 900)));
+
+        JSONObject split = CloudV3Sync.normalizeWorkout(workout)
+                .getJSONArray("splits").getJSONObject(0);
+
+        assertEquals(4, split.length());
+        assertFalse(split.has("steps"));
+        assertEquals(1000d, split.getDouble("distanceMeters"), 0d);
+        assertEquals(300000L, split.getLong("durationMs"));
+    }
+
+    @Test public void pendingWorkoutOutboxRepairsSplitPayloadInPlace() throws Exception {
+        JSONObject item = new JSONObject().put("kind", "workout").put("entityId", "workout-1")
+                .put("fingerprint", "stale").put("payload", new JSONObject()
+                        .put("operationId", "00000000-0000-4000-8000-000000000001")
+                        .put("workout", baseWorkout()
+                                .put("splits", new JSONArray().put(new JSONObject()
+                                        .put("index", 1).put("distanceMeters", 1000)
+                                        .put("durationMs", 300000)
+                                        .put("paceSecondsPerKm", 300).put("steps", 900)))));
+        JSONObject state = stateWithOutbox(item);
+
+        assertTrue(CloudV3Sync.normalizePendingWorkoutOutbox(state));
+
+        JSONObject repaired = state.getJSONArray("outbox").getJSONObject(0);
+        assertFalse(repaired.getJSONObject("payload").getJSONObject("workout")
+                .getJSONArray("splits").getJSONObject(0).has("steps"));
+        assertFalse("stale".equals(repaired.getString("fingerprint")));
+        assertEquals(0, state.getJSONArray("conflicts").length());
+    }
+
+    @Test public void pendingWorkoutOutboxQuarantinesRecordThatCannotBeExpressed()
+            throws Exception {
+        JSONObject broken = baseWorkout();
+        broken.getJSONArray("stageResults").getJSONObject(0).put("unit", "PACE");
+        JSONObject item = new JSONObject().put("kind", "workout").put("entityId", "workout-1")
+                .put("fingerprint", "stale").put("payload", new JSONObject()
+                        .put("operationId", "00000000-0000-4000-8000-000000000001")
+                        .put("workout", broken));
+        JSONObject state = stateWithOutbox(item);
+
+        assertTrue(CloudV3Sync.normalizePendingWorkoutOutbox(state));
+
+        assertEquals(0, state.getJSONArray("outbox").length());
+        assertEquals(1, state.getJSONArray("conflicts").length());
+        assertEquals("local_contract_invalid", state.getJSONArray("conflicts")
+                .getJSONObject(0).getString("error"));
+    }
+
+    @Test public void unsendableHealthRecordNeverSharesABatchWithAPlanDelete() throws Exception {
+        JSONObject plan = new JSONObject().put("kind", "plan").put("entityId", "library")
+                .put("fingerprint", "plan-fp").put("payload", new JSONObject()
+                        .put("operationId", "00000000-0000-4000-8000-000000000002")
+                        .put("expectedRevision", 0).put("library", cloudLibrary("Deleted")));
+        JSONObject broken = new JSONObject().put("kind", "workout").put("entityId", "workout-1")
+                .put("fingerprint", "stale").put("payload", new JSONObject()
+                        .put("operationId", "00000000-0000-4000-8000-000000000001")
+                        .put("workout", baseWorkout().put("distanceMeters", -5)));
+        JSONObject state = emptyState();
+        state.getJSONArray("outbox").put(broken).put(plan);
+
+        assertTrue(CloudV3Sync.quarantineUnsendableItems(state));
+
+        assertEquals(1, state.getJSONArray("outbox").length());
+        assertEquals("plan", state.getJSONArray("outbox").getJSONObject(0).getString("kind"));
+        assertEquals(1, state.getJSONArray("conflicts").length());
     }
 
     @Test public void deviceRotationDoesNotReuseOldCursorOutboxOrActiveRequest() throws Exception {
@@ -392,6 +584,17 @@ public class CloudV3SyncTest {
         }
         return cloud.put("schemaVersion", 3).put("revision", revision)
                 .put("deletedPlanIds", new JSONArray());
+    }
+
+    private static JSONObject baseWorkout() throws Exception {
+        return new JSONObject().put("schemaVersion", 1).put("id", "workout-1")
+                .put("startedAt", 1000L).put("endedAt", 2000L).put("durationMs", 1000L)
+                .put("distanceMeters", 500d).put("steps", 700).put("averageHeartRate", 130d)
+                .put("plan", "plan-text").put("planName", "Plan").put("planGroup", "Group")
+                .put("planRequirement", "Do it")
+                .put("stageResults", new JSONArray().put(new JSONObject().put("index", 1)
+                        .put("name", "Run").put("unit", "TIME").put("target", 60)
+                        .put("completedAtMs", 60000).put("totalDistanceMeters", 500d)));
     }
 
     private static JSONObject cloudLibrary(String name) throws Exception {

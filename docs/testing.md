@@ -103,6 +103,7 @@ git diff --check
 - 计划页顶层巨型卡片已移除，计划组选中态、主/次/危险操作层级可辨；编辑器返回入口与标题不再重叠。
 - 断连训练页显示“无法读取手表状态”与“打开连接设置”，不再显示可用态“开始训练”（`BUG-030`）。
 - 使用不落盘的 10.24 km / 1:15:32 合成详情验证无轨迹分支：136dp 空状态、运动概览和详细数据同屏；不再创建可见的空白地图网格（`BUG-031`）。
+- 合成运动指标回归：`HistoryStoreSummaryTest` 校验 10000 步、500 千卡、`synthetic=true` 及 10/20 分钟步数时间线在摘要同步投影中保留；该用例不宣称写入厂商系统运动数据库。
 - 本轮不替代小米真机字体、系统栏、真实计划长文案和已配对/实时训练数据截图；用户使用手机期间不抢占前台。
 
 ### Watch 0.21.0 全界面视觉真机预检（2026-07-29）
@@ -232,6 +233,7 @@ git diff --check
 - `CloudV3Sync.sync()` 在进程内串行；WebSocket 使用轻量 command exchange，live status 与 full history/sleep 采集分离；命令成功后同次调用立即二次 exchange。
 - Watch `/v1/control/delete_workout` 使用 commandId/expiresAt/controlRevision/workoutId 和持久 request signature cache；删除已不存在记录仍返回幂等成功，不同正文复用 ID 返回 409。
 - 最终本地门禁：Watch JVM 44/44、Phone JVM 87/87（均 `--rerun-tasks`）；双模块 `lintDebug`、debug/release assemble 成功；Worker typecheck 与 static/schema/D1/黑盒 10/5/8/39 项通过；Markdown 本地链接 33/33、两仓 `git diff --check` 通过。这里只证明本地构建与状态机合同，不替代真机传感器、命令崩溃点或手机后台恢复证据。
+- 生产 Phone provisioning 回归：脚本只写正式 `watch-mcp.focuslink-poyi-6465e9.workers.dev/sync/v3/exchange`，拒绝 staging endpoint；真实 Phone 只核对安装版本、脱敏 endpoint、HTTP 状态、outbox 数量和计划 revision，不读取 token，也不以真机点击作为测试。
 
 ### Cloud V3 staging 远端合同（2026-07-30）
 

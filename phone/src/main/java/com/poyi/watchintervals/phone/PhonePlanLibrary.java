@@ -23,9 +23,19 @@ public final class PhonePlanLibrary {
     public static final class CloudApplyResult {
         final JSONObject library;
         final boolean changed;
+        /**
+         * True when an authoritative cloud replace was about to resurrect a plan the user had
+         * deleted on this device. The delete is re-applied on top of the cloud snapshot so the
+         * next exchange can upload it against the now-known cloud revision.
+         */
+        final boolean rebasedLocalDeletes;
         CloudApplyResult(JSONObject library, boolean changed) {
+            this(library, changed, false);
+        }
+        CloudApplyResult(JSONObject library, boolean changed, boolean rebasedLocalDeletes) {
             this.library = library;
             this.changed = changed;
+            this.rebasedLocalDeletes = rebasedLocalDeletes;
         }
     }
 
@@ -61,14 +71,14 @@ public final class PhonePlanLibrary {
 
     public static synchronized JSONObject saveAndSync(Context context, JSONObject source) {
         JSONObject saved = save(context, source);
-        CloudV3Sync.syncAsync(context);
+        CloudV3Sync.syncPlanAsync(context);
         return saved;
     }
 
     public static synchronized JSONObject upsert(Context context, JSONObject profile) throws Exception {
         JSONObject library = mutateUpsert(load(context), profile, System.currentTimeMillis());
         JSONObject saved = save(context, library);
-        CloudV3Sync.syncAsync(context);
+        CloudV3Sync.syncPlanAsync(context);
         return saved;
     }
 
@@ -121,7 +131,7 @@ public final class PhonePlanLibrary {
     public static synchronized JSONObject deletePlan(Context context, String id) throws Exception {
         JSONObject library = mutateDeletePlan(load(context), id);
         JSONObject saved = save(context, library);
-        CloudV3Sync.syncAsync(context);
+        CloudV3Sync.syncPlanAsync(context);
         return saved;
     }
 
@@ -143,7 +153,7 @@ public final class PhonePlanLibrary {
         for (int i = 0; i < plans.length(); i++) if (id.equals(plans.getJSONObject(i).optString("id"))) found = true;
         if (!found) throw new IllegalArgumentException("plan_not_found");
         library.put("selectedPlanId", id).put("revision", nextRevision(library));
-        JSONObject saved = save(context, library); CloudV3Sync.syncAsync(context); return saved;
+        JSONObject saved = save(context, library); CloudV3Sync.syncPlanAsync(context); return saved;
     }
 
     /**
@@ -176,7 +186,12 @@ public final class PhonePlanLibrary {
             }
             return new CloudApplyResult(new JSONObject(current.toString()), true);
         }
-        JSONObject local = cloudToLocal(cloud);
+        JSONObject cloudLocal = cloudToLocal(cloud);
+        // The cloud is authoritative, but a delete the user just made may not have been accepted
+        // yet. Re-applying those tombstones keeps a plan from reappearing after a cloud replace.
+        JSONObject local = rebasePendingDeletes(current, cloudLocal);
+        boolean rebasedLocalDeletes = !CloudV3Sync.planFingerprint(cloudLocal)
+                .equals(CloudV3Sync.planFingerprint(local));
         SharedPreferences.Editor editor = preferences.edit()
                 .putString(KEY, local.toString())
                 .putString(PROJECTION_OPERATION, "cloud_replace")
@@ -185,7 +200,126 @@ public final class PhonePlanLibrary {
                 .putLong(CLOUD_REVISION, revision)
                 .putString(CLOUD_FINGERPRINT, cloudFingerprint);
         if (!editor.commit()) throw new IllegalStateException("cloud_plan_commit_failed");
-        return new CloudApplyResult(local, true);
+        return new CloudApplyResult(local, true, rebasedLocalDeletes);
+    }
+
+    /**
+     * Re-applies tombstones for plans this device deleted but the cloud has not accepted yet.
+     * The returned snapshot is committed with a fresh local revision so the next exchange
+     * re-uploads the delete against the now-known cloud revision.
+     */
+    private static JSONObject rebasePendingDeletes(JSONObject previous, JSONObject cloudLocal)
+            throws Exception {
+        JSONArray pending = previous.optJSONArray("deletedPlanIds");
+        if (pending != null && pending.length() > 0) {
+            JSONArray plans = cloudLocal.getJSONArray("plans");
+            JSONArray deletes = new JSONArray();
+            for (int index = 0; index < pending.length(); index++) {
+                JSONObject entry = pending.optJSONObject(index);
+                String id = entry == null ? pending.optString(index, "") : entry.optString("id");
+                if (!validPlanId(id)) continue;
+                if (entry != null && entry.optBoolean("acknowledged", false)) continue;
+                if (findPlan(plans, id) == null) continue;
+                deletes.put(new JSONObject().put("id", id)
+                        .put("deletedAt", entry == null ? System.currentTimeMillis()
+                                : Math.max(1L, entry.optLong("deletedAt", System.currentTimeMillis())))
+                        .put("acknowledged", false));
+            }
+            if (deletes.length() > 0) {
+                JSONArray retained = new JSONArray();
+                for (int index = 0; index < plans.length(); index++) {
+                    JSONObject plan = plans.optJSONObject(index);
+                    if (plan == null || findEntry(deletes, plan.optString("id")) != null) continue;
+                    retained.put(plan);
+                }
+                cloudLocal.put("plans", retained);
+                String selected = cloudLocal.optString("selectedPlanId");
+                if (findEntry(deletes, selected) != null) {
+                    cloudLocal.put("selectedPlanId", retained.length() == 0 ? ""
+                            : retained.getJSONObject(0).optString("id"));
+                }
+                JSONArray mergedDeletes = new JSONArray();
+                for (int index = 0; index < deletes.length(); index++) mergedDeletes.put(deletes.get(index));
+                JSONArray existing = cloudLocal.optJSONArray("deletedPlanIds");
+                if (existing != null) for (int index = 0; index < existing.length(); index++) {
+                    JSONObject item = existing.optJSONObject(index);
+                    if (item != null && findEntry(deletes, item.optString("id")) == null) {
+                        mergedDeletes.put(item);
+                    }
+                }
+                cloudLocal.put("deletedPlanIds", mergedDeletes);
+            }
+        }
+        // Re-apply group tombstones the same way. This runs even when there are no plan tombstones
+        // (e.g. deleting an empty group), otherwise the cloud snapshot would resurrect the group.
+        rebasePendingGroupDeletes(previous, cloudLocal);
+        cloudLocal.put("revision", nextRevision(cloudLocal));
+        return normalize(cloudLocal);
+    }
+
+    /** Removes tombstones for groups this device deleted but the cloud still carries. */
+    private static void rebasePendingGroupDeletes(JSONObject previous, JSONObject cloudLocal)
+            throws Exception {
+        Set<String> pending = pendingGroupSyncDeletes(previous);
+        if (pending.isEmpty()) return;
+        JSONArray groups = cloudLocal.optJSONArray("groups");
+        if (groups == null || groups.length() == 0) return;
+        JSONArray retained = new JSONArray();
+        Set<String> removedGroupIds = new HashSet<>();
+        for (int index = 0; index < groups.length(); index++) {
+            JSONObject group = groups.optJSONObject(index);
+            String id = group == null ? "" : group.optString("id");
+            if (group != null && pending.contains(id)) removedGroupIds.add(id);
+            if (group != null && !pending.contains(id)) retained.put(group);
+        }
+        if (removedGroupIds.isEmpty()) return;
+        cloudLocal.put("groups", retained);
+        // Any plan that referenced a now-removed group can no longer be projected; drop it too so
+        // the wire library stays valid (groupId must exist in groups or be null).
+        JSONArray plans = cloudLocal.optJSONArray("plans");
+        if (plans != null) {
+            JSONArray kept = new JSONArray();
+            for (int index = 0; index < plans.length(); index++) {
+                JSONObject plan = plans.optJSONObject(index);
+                String planGroupId = plan == null ? "" : plan.optString("groupId");
+                if (plan != null && !removedGroupIds.contains(planGroupId)) kept.put(plan);
+            }
+            cloudLocal.put("plans", kept);
+        }
+        String selected = cloudLocal.optString("selectedPlanId");
+        if (findEntry(retained, selected) != null || groups.length() == 0) {
+            // selectedPlanId is a plan id; if its plan was dropped, clear selection.
+            JSONArray keptPlans = cloudLocal.optJSONArray("plans");
+            String fallback = "";
+            if (keptPlans != null && keptPlans.length() > 0) fallback = keptPlans.getJSONObject(0).optString("id");
+            cloudLocal.put("selectedPlanId", fallback);
+        }
+        // Carry the group tombstones forward so the committed snapshot keeps them; otherwise a
+        // subsequent normalize() on the (empty) cloud tombstone list would drop them.
+        JSONArray mergedGroupDeletes = new JSONArray();
+        for (String id : pending) {
+            mergedGroupDeletes.put(new JSONObject().put("id", id)
+                    .put("deletedAt", System.currentTimeMillis())
+                    .put("acknowledged", false));
+        }
+        JSONArray existingGroupDeletes = cloudLocal.optJSONArray("deletedGroupIds");
+        if (existingGroupDeletes != null) for (int index = 0; index < existingGroupDeletes.length(); index++) {
+            JSONObject entry = existingGroupDeletes.optJSONObject(index);
+            if (entry != null && !pending.contains(entry.optString("id"))
+                    && findEntry(mergedGroupDeletes, entry.optString("id")) == null) {
+                mergedGroupDeletes.put(entry);
+            }
+        }
+        cloudLocal.put("deletedGroupIds", mergedGroupDeletes);
+    }
+
+    private static JSONObject findEntry(JSONArray entries, String id) {
+        if (entries == null) return null;
+        for (int index = 0; index < entries.length(); index++) {
+            JSONObject entry = entries.optJSONObject(index);
+            if (entry != null && id.equals(entry.optString("id"))) return entry;
+        }
+        return null;
     }
 
     public static boolean cloudMetadataMatches(String storedDomain, long storedRevision,
@@ -262,7 +396,7 @@ public final class PhonePlanLibrary {
         for (int i = 0; i < groups.length(); i++) if (clean.equals(groups.getJSONObject(i).optString("name"))) return groups.getJSONObject(i);
         JSONObject group = new JSONObject().put("id", UUID.randomUUID().toString()).put("name", clean).put("sortOrder", groups.length());
         groups.put(group); library.put("revision", System.currentTimeMillis()); save(context, library);
-        CloudV3Sync.syncAsync(context); return group;
+        CloudV3Sync.syncPlanAsync(context); return group;
     }
 
     public static synchronized JSONObject renameGroup(Context context, String id, String name) throws Exception {
@@ -271,29 +405,48 @@ public final class PhonePlanLibrary {
         for (int i = 0; i < groups.length(); i++) if (id.equals(groups.getJSONObject(i).optString("id"))) { found = groups.getJSONObject(i); found.put("name", clean); }
         if (found == null) throw new IllegalArgumentException("group_not_found");
         library.put("revision", System.currentTimeMillis()); save(context, library);
-        CloudV3Sync.syncAsync(context); return found;
+        CloudV3Sync.syncPlanAsync(context); return found;
     }
 
     public static synchronized JSONObject deleteGroup(Context context, String id) throws Exception {
         JSONObject library = mutateDeleteGroup(load(context), id);
         JSONObject saved = save(context, library);
-        CloudV3Sync.syncAsync(context);
+        CloudV3Sync.syncPlanAsync(context);
         return saved;
     }
 
     private static JSONObject mutateDeleteGroup(JSONObject sourceLibrary, String id)
             throws Exception {
         JSONObject library = normalize(new JSONObject(sourceLibrary.toString()));
-        JSONArray plans = library.getJSONArray("plans");
-        for (int index = 0; index < plans.length(); index++) {
-            if (id.equals(plans.getJSONObject(index).optString("groupId"))) {
-                throw new IllegalStateException("group_not_empty");
+        JSONArray sourceGroups = library.getJSONArray("groups"), groups = new JSONArray();
+        boolean found = false;
+        for (int i = 0; i < sourceGroups.length(); i++) {
+            JSONObject group = sourceGroups.getJSONObject(i);
+            if (id.equals(group.optString("id"))) found = true;
+            else groups.put(group);
+        }
+        if (!found) throw new IllegalArgumentException("group_not_found");
+        JSONArray sourcePlans = library.getJSONArray("plans"), plans = new JSONArray();
+        String selected = library.optString("selectedPlanId");
+        String firstRemainingPlan = "";
+        for (int i = 0; i < sourcePlans.length(); i++) {
+            JSONObject plan = sourcePlans.getJSONObject(i);
+            if (id.equals(plan.optString("groupId"))) {
+                markSyncDelete(library, plan.optString("id"));
+                if (selected.equals(plan.optString("id"))) selected = "";
+            } else {
+                plans.put(plan);
+                if (firstRemainingPlan.isEmpty()) firstRemainingPlan = plan.optString("id");
             }
         }
-        JSONArray source = library.getJSONArray("groups"), groups = new JSONArray();
-        boolean found = false; for (int i = 0; i < source.length(); i++) { JSONObject group = source.getJSONObject(i); if (id.equals(group.optString("id"))) found = true; else groups.put(group); }
-        if (!found) throw new IllegalArgumentException("group_not_found");
-        library.put("groups", groups).put("revision", System.currentTimeMillis());
+        // A group deletion is not a plan deletion. The cloud snapshot still contains the group,
+        // so without its own tombstone a stale cloud replace would resurrect it whenever it is
+        // applied over the local library. Record the group's id so cloud replays re-apply it.
+        markGroupSyncDelete(library, id);
+        if (selected.isEmpty()) selected = firstRemainingPlan;
+        library.put("groups", groups).put("plans", plans)
+                .put("selectedPlanId", selected)
+                .put("revision", System.currentTimeMillis());
         return normalize(library);
     }
 
@@ -311,7 +464,10 @@ public final class PhonePlanLibrary {
                 .put("selectedPlanId", library.optString("selectedPlanId"))
                 .put("deletedPlanIds", new JSONArray(
                         library.optJSONArray("deletedPlanIds") == null ? "[]" :
-                                library.getJSONArray("deletedPlanIds").toString()));
+                                library.getJSONArray("deletedPlanIds").toString()))
+                .put("deletedGroupIds", new JSONArray(
+                        library.optJSONArray("deletedGroupIds") == null ? "[]" :
+                                library.getJSONArray("deletedGroupIds").toString()));
     }
 
     public static Set<String> pendingSyncDeletes(JSONObject library) {
@@ -388,7 +544,14 @@ public final class PhonePlanLibrary {
                 .put("deletedPlanIds", new JSONArray(
                         metadata.optJSONArray("deletedPlanIds") == null ? "[]" :
                                 metadata.getJSONArray("deletedPlanIds").toString()))
+                .put("deletedGroupIds", new JSONArray(
+                        metadata.optJSONArray("deletedGroupIds") == null ? "[]" :
+                                metadata.getJSONArray("deletedGroupIds").toString()))
                 .put("revision", nextRevision(library));
+        // Incoming metadata may be an older snapshot from the watch that still carries a group
+        // this device deleted. Re-apply the local tombstones so a watch write-back can never
+        // resurrect a deleted group or plan.
+        library = rebasePendingDeletes(load(context), library);
         return save(context, library);
     }
 
@@ -413,7 +576,7 @@ public final class PhonePlanLibrary {
         }
         if (changed) {
             save(context, library.put("deletedPlanIds", confirmed));
-            CloudV3Sync.syncAsync(context);
+            CloudV3Sync.syncPlanAsync(context);
         }
     }
 
@@ -488,9 +651,28 @@ public final class PhonePlanLibrary {
             }
             deletedPlanIds.put(normalizedDelete);
         }
+        JSONArray deletedGroupIds = new JSONArray();
+        JSONArray sourceGroupDeletes = source.optJSONArray("deletedGroupIds");
+        Set<String> seenGroupDeletes = new HashSet<>();
+        if (sourceGroupDeletes != null) for (int index = 0; index < sourceGroupDeletes.length(); index++) {
+            JSONObject item = sourceGroupDeletes.optJSONObject(index);
+            String id = item == null ? sourceGroupDeletes.optString(index, "") : item.optString("id");
+            if (!validGroupId(id) || groupIds.contains(id) || !seenGroupDeletes.add(id)) continue;
+            long deletedAt = item == null ? System.currentTimeMillis()
+                    : Math.max(1, item.optLong("deletedAt", System.currentTimeMillis()));
+            JSONObject normalizedDelete = new JSONObject().put("id", id)
+                    .put("deletedAt", deletedAt)
+                    .put("acknowledged", item != null &&
+                            item.optBoolean("acknowledged", false));
+            if (item != null && item.optLong("confirmedAt", 0) > 0) {
+                normalizedDelete.put("confirmedAt", item.optLong("confirmedAt"));
+            }
+            deletedGroupIds.put(normalizedDelete);
+        }
         return new JSONObject().put("schemaVersion", SCHEMA).put("revision", Math.max(1, source.optLong("revision", System.currentTimeMillis())))
                 .put("groups", groups).put("plans", plans).put("selectedPlanId", selected)
-                .put("deletedPlanIds", deletedPlanIds);
+                .put("deletedPlanIds", deletedPlanIds)
+                .put("deletedGroupIds", deletedGroupIds);
     }
 
     public static JSONObject normalizeForTesting(JSONObject source) throws Exception {
@@ -507,6 +689,11 @@ public final class PhonePlanLibrary {
 
     static JSONObject deleteGroupForTesting(JSONObject library, String id) throws Exception {
         return mutateDeleteGroup(library, id);
+    }
+
+    static JSONObject rebasePendingDeletesForTesting(JSONObject previous, JSONObject cloudLocal)
+            throws Exception {
+        return rebasePendingDeletes(previous, cloudLocal);
     }
 
     private static JSONObject findPlan(JSONArray plans, String id) {
@@ -549,6 +736,43 @@ public final class PhonePlanLibrary {
         values.put(new JSONObject().put("id", id).put("deletedAt", System.currentTimeMillis())
                 .put("acknowledged", false));
     }
+
+    private static void markGroupSyncDelete(JSONObject library, String id) throws Exception {
+        if (validGroupId(id) && pendingGroupSyncDeletes(library).contains(id)) return;
+        JSONArray values = library.optJSONArray("deletedGroupIds");
+        if (values == null) { values = new JSONArray(); library.put("deletedGroupIds", values); }
+        values.put(new JSONObject().put("id", id).put("deletedAt", System.currentTimeMillis())
+                .put("acknowledged", false));
+    }
+
+    private static boolean removeGroupSyncDelete(JSONObject library, String id) throws Exception {
+        JSONArray source = library.optJSONArray("deletedGroupIds");
+        if (source == null) return false;
+        JSONArray retained = new JSONArray();
+        boolean removed = false;
+        for (int index = 0; index < source.length(); index++) {
+            JSONObject item = source.optJSONObject(index);
+            String candidate = item == null ? source.optString(index, "") : item.optString("id");
+            if (id.equals(candidate)) removed = true;
+            else if (item != null) retained.put(item);
+        }
+        if (removed) library.put("deletedGroupIds", retained);
+        return removed;
+    }
+
+    public static Set<String> pendingGroupSyncDeletes(JSONObject library) {
+        Set<String> result = new HashSet<>();
+        JSONArray values = library.optJSONArray("deletedGroupIds");
+        if (values == null) return result;
+        for (int index = 0; index < values.length(); index++) {
+            JSONObject item = values.optJSONObject(index);
+            String id = item == null ? values.optString(index, "") : item.optString("id");
+            if (validGroupId(id) && (item == null || !item.optBoolean("acknowledged", false))) {
+                result.add(id);
+            }
+        }
+        return result;
+    }
     private static boolean removeSyncDelete(JSONObject library, String id) throws Exception {
         JSONArray source = library.optJSONArray("deletedPlanIds");
         if (source == null) return false;
@@ -566,6 +790,9 @@ public final class PhonePlanLibrary {
     private static boolean validPlanId(String id) {
         return id != null && id.matches("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$") &&
                 !EncryptedWatchSync.PLAN_LIBRARY_ENTITY_ID.equals(id);
+    }
+    private static boolean validGroupId(String id) {
+        return id != null && id.matches("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$");
     }
     private static void addTemplate(JSONArray groups, JSONArray plans, String group, String name, String requirement, JSONArray stages, long now) throws Exception {
         for (int i = 0; i < plans.length(); i++) if (name.equals(plans.getJSONObject(i).optString("name"))) return;

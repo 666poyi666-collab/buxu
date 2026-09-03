@@ -77,6 +77,59 @@
 - 复查条件：固件升级或厂商服务版本变化后重新执行三段能力检测。
 - 参考：`system-exercise-implementation.md`。
 
+### BUG-080：合成验收记录未持久化热量和分时步数
+
+- 状态：Fixed
+- 严重度：P2
+- 现象：验收脚本写入的 `calories`、`synthetic` 和 10 分钟步数变化不在 `WorkoutRecord` 摘要模型中，应用重建或同步时会丢失。
+- 根因：历史摘要模型只覆盖传感器训练字段，脚本扩展字段未纳入向后兼容解析/序列化。
+- 修复：`WorkoutRecord` 增加上述字段并保留旧 JSON 默认值；合成脚本固定写入 20 分钟、7000→10000 步和 500 千卡；同步摘要继续剔除私有轨迹/心率样本但保留验收指标。
+- 防复发测试：`HistoryStoreSummaryTest` 校验步骤时间线、热量和合成标记在云摘要投影中完整保留。
+- 边界：该修复只影响应用/同步摘要；系统 HealthKit 运动会话仍由真实系统生命周期生成，不能由私有目录注入。
+- 2026-08-31 实机复核：USB `OWW221` 上可回读 `files/workouts/codex-synthetic-10000-500-20260831/summary.json`，但 `com.heytap.wearable.health` 的 ExerciseService 仍只接受 HealthKit/MCU 会话；`adb shell run-as com.heytap.wearable.health` 返回 `package not debuggable`，且当前固件 `OUTDOOR_RUN` 能力为空。验收脚本现明确返回 `systemLayer=not_written`，避免把应用层成功误报为系统运动识别。
+
+### BUG-082：生产手机 provisioning 把 Cloud V3 endpoint 写成 staging 地址
+
+- 状态：In Progress
+- 严重度：P1
+- 影响：Phone 0.25.1 与 ChatGPT→Cloud→Phone 计划同步链路
+- 复现：2026-09-02 读取真实 Phone 的脱敏状态，`encrypted_watch_sync_v1.xml` 的 endpoint host 为 `watch-staging.pyzzgk.dpdns.org`；`watch_cloud_v3.xml` 最近一次请求为 HTTP 400 `invalid_exchange`，outbox 保留 1 条计划、5 条睡眠和 3 条训练，计划删除因此只在 Phone 本地可见。
+- 根因：`provision-production-phone.ps1` 向 production D1 注册设备，却把手机 endpoint 写为 staging 命名地址；即使当前自定义域名暂时转发到同一 Worker，生产 authority 的目标不再由脚本明确保证，故障时也难以区分 authority、凭据和请求合同问题。
+- 修复：脚本固定使用 `https://watch-mcp.focuslink-poyi-6465e9.workers.dev/sync/v3/exchange`，并从 PATH 或 Android SDK 自动解析 `adb.exe`；static gate 要求正式 endpoint 且拒绝 staging endpoint。随后重新 provision 新的 production device token，触发 Phone 的 Cloud V3 catch-up 并回读 outbox/计划 revision。
+- 防复发测试：`cloud/mcp/tests/p0-static-gates.test.mjs` 检查 provisioning 只写正式 exchange endpoint、脚本不输出 token；Phone/Cloud 状态回读检查计划删除后 outbox 归零。
+- 边界：本条不改变 ChatGPT OAuth MCP scope，也不把 Phone device token 暴露给 ChatGPT；睡眠数据仍需手表端 HealthKit 权限和真实记录。
+
+### BUG-083：单条非法健康记录让服务端整批拒收 exchange，计划删除被永久拖住
+
+- 状态：Fixed
+- 严重度：P1
+- 影响：Phone 0.25.1 与 ChatGPT→Cloud→Phone 计划同步链路
+- 现象：手机端删除训练计划后计划仍回到列表，删除只在本地短暂生效。
+- 复现：2026-09-02 脱敏回读真实 Phone 的 `watch_cloud_v3.xml`：outbox 37 条（1 计划 / 7 训练 / 29 睡眠），最近一次请求为 HTTP 400 `invalid_exchange`。按服务端 `parseExchange` 规则逐条离线重放，**只有 1 条被拒**：训练 `codex-synthetic-10000-500-20260831` 的 `splits` 元素含多余字段 `steps`。
+- 根因：`cloud-v3.ts` 的 `parseExchange` 是一次性整批校验，`validSplit` 用 `exact()` 要求 splits 只能是 `index/distanceMeters/durationMs/paceSecondsPerKm`；任一条目不合法即整批返回 400，同一批次里的计划变更永远不会落库，云端随后把未变更的计划库推回手机，表现为"删不掉"。手机端此前只在采集时用 `WORKOUT_FIELDS` 做顶层白名单，没有对 `splits`、`stageResults`、`heartRateRange`、`dataSourceSummary` 做形状投影，也没有对已持久化的旧条目做修复，因此该条目会永久阻塞队列。
+- 修复：
+  - `CloudV3Sync.normalizeWorkout()` 把训练记录投影为服务端接受的精确字段与数值边界，含 `splits`/`stageResults`/`heartRateRange`/`dataSourceSummary` 的子结构归一；无法表达的条目直接判为不可发送。
+  - `normalizePendingWorkoutOutbox()` 修复已持久化的旧条目并同步重算 fingerprint 与 operationId。
+  - `quarantineUnsendableItems()` 在每次同步前把不可发送的条目移入冲突区（错误码 `local_contract_invalid`），保证任何单条脏数据都不能再与计划变更同批。
+  - 计划变更走独立优先通道 `syncPlanAsync()`，不再排在睡眠与历史回填之后。
+- 防复发测试：`CloudV3SyncTest` 覆盖 splits 字段投影、待发队列原地修复、不可表达记录隔离、脏数据不得与计划删除同批四项断言。
+- 边界：被隔离的训练记录不会再上传，这是预期行为——服务端永远不会接受它；冲突区保留原始候选便于回溯，不写入 token 或轨迹数据。
+
+### BUG-084：计划阶段带多余字段导致整库被服务端拒收，手机删除与 ChatGPT 增删改同时失效
+
+- 状态：Fixed（待真实环境复现关闭）
+- 严重度：P0
+- 影响：Phone 0.25.1 与 ChatGPT→Cloud→Phone 计划同步链路
+- 现象：训练计划手机端删除后仍回来，云端 ChatGPT 无法增添/修改/删除计划。
+- 根因（确定性，非猜测）：服务端 `validStage` 以 `exact()` 要求 stage 恰好是 `{kind, unit, target}`，任一条计划 stage 带多余字段即整库 `validLibrary` 失败、整个 `/sync/v3/exchange` 返回 400 `invalid_exchange`。计划库是整库替换，删除即"库中无该计划"，故一条脏 stage 同时拖死手机删除与 ChatGPT 增删改。此前 `splits.steps` 与 `stage` 两个结论冲突，实为同一条"严格键集"机制下的两个可能触发点，本轮以字段级比对 + 集成测试确认主因在计划 stage。
+- 修复：
+  - 手机端 `CloudV3Sync.cloudPlanLibrary` 投影 stage 为 `{kind, unit, target}`，丢弃多余字段但保留语义值；非法 `kind/unit` 或 `target<1` 抛错进入 conflicts 报告，不篡改目标、不跳过计划。
+  - `collectPlan` 捕获投影异常，把计划库隔离到 conflicts（`local_contract_invalid`），保留本地快照与删除墓碑。
+  - 服务端 `loadPlanLibrary` 读侧 `sanitizePlan`/`sanitizeStage` 修复 D1 历史脏 stage；ChatGPT 直写路径 `replaceCloudPlanLibrary` 原已用 `validLibrary` 拒绝脏输入。
+  - `applyCloudV3IfUnchanged` 云端 replace 时重新套用本地未确认删除墓碑，防止旧云快照复活已删计划。
+- 防复发测试：`CloudV3PlanContractTest` 10 项、`PhonePlanLibraryMutationTest` 2 项、云端 `worker-contract` 1 项（D1 脏 stage 读回即修复）。
+- 关闭条件：真实 authority 下手机删除与 ChatGPT 增删改端到端收敛，脱敏回读确认计划 revision 推进、outbox 归零、删除不复活。
+
 ### BUG-008：测试截图和 UI XML 证据散落在仓库根目录外的本地工作区
 
 - 状态：Open
@@ -828,6 +881,44 @@
 - 防复发测试：`AvdToolingResourceTest` 固定 SDK/版本/可见焦点合同。
 - 验证：`OWW221_API30` 的 API/378×496/320dpi/30秒/安装/可见性全 True；`WatchIntervalsPhone_API35` 的 API/1080×2400/440dpi/安装/可见性全 True。
 
+### BUG-085：计划 revision 冲突后删除墓碑没有重新上传
+
+- 状态：Fixed，已部署 Worker 与 APK，待用户在实体 Phone 上复测
+- 严重度：P0
+- 发现版本：Phone 0.25.1（22）／Cloud MCP 0.5.0
+- 前置条件：Phone 本地删除一个仍存在于云端的安排；请求使用过期 plan revision，或云端在请求期间发生了另一项计划变更。
+- 复现步骤：删除安排 → 计划 exchange 返回 `outcome=conflict,error=revision_conflict` → 云端返回仍含该安排的当前库 → 观察后续 outbox 与下一次云端读回。
+- 实际结果：旧请求被移除；本地快照重新移除安排并保留墓碑，但没有新的带最新 `expectedRevision` 的计划请求，云端安排继续存在，后续权威快照可再次带回它。
+- 预期结果：保留本地删除意图，针对云端返回的最新 revision 自动重发完整计划库；成功 ACK 后本地、云端和 Watch 都不再有该安排。
+- 根因：`applyCloudV3IfUnchanged` 已返回 `rebasedLocalDeletes`，但 `CloudV3Sync.applyResponse` 未消费该标记。
+- 影响范围与同类入口排查：手机删除、手机编辑/新建和 ChatGPT 计划写入都使用完整 library replace；健康记录不再与 plan 共批次阻塞。ChatGPT 直接写路径另外受历史脏 group/plan/stage 字段影响，读投影现统一剥离非合同字段。
+- 修复位置：`phone/.../CloudV3Sync.java` 的冲突重试；`cloud/mcp/src/cloud-v3.ts` 的 group/plan/stage 读投影；对应 Phone/Worker 回归测试。
+- 防复发测试：`CloudV3SyncTest.rebasedLocalDeleteIsRequeuedAgainstTheReturnedCloudRevision`、`CloudV3PlanContractTest`、Worker 脏计划读回测试。
+- 验证命令与结果：ASCII 工作树 Phone/App JVM 46 项通过；Cloud `npm run typecheck`、static 10、schema 5、D1 8、Worker 40 全通过。production/custom domain Worker Version `3fae3fe7-4aa4-43dc-a3fb-68d45b612d33` 的 health/ready 均回读候选基线 `44541e93…` 且全绿；Phone/Watch APK 覆盖安装成功，未做实体功能测试。
+
+### BUG-086：非空分组的删除菜单静默无响应
+
+- 状态：Fixed，待实体 Phone 用户复测
+- 严重度：P1（交互反馈）
+- 发现版本：Phone 0.25.1（22）
+- 复现步骤：进入计划库 → 点击含安排的分组右侧“…” → 点击“分组内有 N 个安排”。视频证据：`C:\Users\16408\Downloads\1000002392.mp4`。
+- 实际结果：删除项因 `enabled = false` 不响应，红色删除图标和文案没有解释原因。
+- 预期结果：点击后明确显示 N 个成员，并在二次确认后级联删除分组及成员；不影响其他分组。
+- 根因：安全保护只做了禁用，没有提供可操作的反馈。
+- 修复位置：`phone/src/main/kotlin/com/poyi/watchintervals/phone/ui/PlanScreen.kt`，非空项改为级联删除确认；`PhonePlanLibrary` 对成员写墓碑；具体安排删除按钮补充 content description。
+- 防复发测试：`PhoneInteractionResourceTest` 固定级联文案和确认入口；`PhonePlanLibraryMutationTest` 固定只删除目标分组及成员；Phone AVD 验证菜单、级联和安排详情删除路径。
+- 验证命令与结果：Phone JVM、lint、assemble 通过；Phone AVD 已验证 4 个成员级联删除和单项删除；主仓库 Phone APK SHA-256 为 `CCD12DAB5CA04596B65DA6A08D91F987189326F11A4D7B58940361BB2BAAD74B`，已覆盖安装到实体 Phone。实体 Phone 未做功能点击或 ADB 查询。
+
+### BUG-087：用户确认后的非空分组级联删除未实现
+
+- 状态：Fixed，已部署 Worker 与 APK，待用户复测
+- 严重度：P0
+- 发现版本：Phone 0.25.1（22）／Cloud MCP 0.5.0
+- 现象：用户确认需要删除分组及全部安排，但 Phone/Cloud 原实现只允许空分组删除，非空项要么无响应、要么返回 `group_not_empty`。
+- 修复：Phone 与 Cloud MCP 在明确二次确认后移除目标分组及其所有成员；Phone 保留每个成员的删除墓碑并按剩余计划修正 selectedPlanId。单项删除在本地变化与后台 response 竞态下按最新云 revision 重试。
+- 防复发测试：Phone `deletingNonEmptyGroupCascadesOnlyItsPlans`、`localPlanChangeDuringExchangeReplacesStaleRequestInsteadOfBlocking`；Cloud Worker 级联 group/plan 删除闭环。
+- 验证：Phone JVM/lint/assemble、Cloud typecheck 与 40 项 Worker 门禁通过；Worker Version `65c51855-fe86-4dca-9a82-ffb1d01f62a6` 已部署，Phone APK 已安装，实体 Phone 未做功能点击。
+
 ## 2. 早期历史项
 
 以下记录依据源码注释、README 和本地回归文件名重建；精确修复提交在首个 Git 提交之前不存在，因此证据等级低于后续规范化记录。
@@ -852,6 +943,7 @@
 | BUG-H016 | 首页长训练要求挤压首屏，配对码和计划入口被底部裁切 | 首页移除重复要求正文并压缩固定尺寸，完整要求保留在计划页 | Verified；OWW221 378×496 截图和 UI bounds |
 | BUG-H017 | Gateway 写计划在响应丢失或进程终止后可能重复执行，且旧 revision 未拒绝 | 手机 API v2 持久记录 requestId/请求哈希/首次结果，执行前写 in_progress，并用单调 revision 恢复提交后的中断 | Fixed；`MutationGuardTest`、双模块构建，待 API-015 真机故障注入 |
 | BUG-H018 | Xiaomi 短时间连续 BLE 扫描触发系统限流，第四轮重连超时 | 首次发现后缓存已验证设备并直接 GATT 重连，仅首次或直连不可用时扫描 | Verified；10 次真机断开/重连通过 |
+| BUG-H019 | 手机 root shell 无法把合成步数写入系统步数 Provider | `WRITE_STEPS` 为 `signature|privileged`，且 KernelSU `su` 域无法访问 `com.miui.rom` 私有数据库；补写副本未落盘，避免将离线副本误报为系统数据 | Blocked；需厂商签名测试包或真实运动会话 |
 
 ## 3. 新缺陷模板
 
