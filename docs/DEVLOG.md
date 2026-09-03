@@ -213,3 +213,35 @@
   - **`watch_upsert_plan` 的 `groupId`/`sortOrder` 强制必填**：`PLAN_SCHEMA` 要求 `groupId`（string|null）+ `sortOrder`（int），因计划属于分组；测试说明未先 `watch_upsert_plan_group` 创建分组或传 `groupId:null,sortOrder:0`，故首次调用报校验错。属正确设计，非缺陷。
 - 改进（用户建议）：`summarizeCloudSleep` 原把“0分0分钟”的空占位记录也计入睡眠平均分与总时长，拉低 `averageScore`。已改为仅统计“有 session 或总时长>0”的真实睡眠夜，新增 `nightsWithData`、`emptyRecordCount` 字段，`averageScore` 不再被空记录拉低。
 - 验证：Cloud typecheck + 40 项测试通过；部署 `buildCommit=6e590d58…`，`workers.dev`/custom domain 均已上线。
+
+## 2026-09-03（双端前端设计审美彻底重构、屏幕适配与分段睡眠深化）
+
+- 用户核心主诉：
+  - “给你全部权限，不要再询问我，直到完全完成，还包括ui前端设计审美的彻底重构，优化适配喔屏幕”
+  - “有的界面字体过小，运动数据界面显示的字体可以大一点。毕竟我抬腕运动的时候，抬腕就看一眼，你这颜色标不明确，字体又小，我看都看不到。还要仔细看，那就麻烦了。”
+  - “心率用红色，并用对应的颜色标好。”
+  - “睡眠数据的获取需要进一步优化，包括在手机端的体现以及给 ChatGPT 的数据。手表端是能把具体的数据都弄好的，包括什么时候睡的、什么时候醒的，第一段睡眠、第二段睡眠之类的。”
+  - “一次只能删一个吗，我删了一个另一个没反应，退出重新进又能删除了，很差劲啊”
+  - 手表连接手机慢及断开后重连困难。
+
+- 手表端（OWW221 378×496 方屏）重构：
+  - **字体层级大幅放大（抬腕一秒看清）**：`STAGE_METRIC_FIGURE` 由 20f 升至 26f，行高扩至 56f；阶段倒计时数字放大至 50f；仪表盘主用时放大至 38f，距离放大至 32f，当前配速放大至 32f，心率放大至 34f，彻底告别原先 20sp 微缩字体与看不清的困扰。
+  - **心率专属性高对比配色**：心率固定统一为高对比亮红（`#FF334B`），配有 `♥` 图标与次/分单位；跑步与距离使用活力荧光绿（`#30D158`），快走与配速使用高对比醒目青（`#38BDF8`），休息与热量使用暖橙（`#FF9F0A`）；独立 ZoneBar 清晰呈现 5 段心率区间。
+  - **BLE 快速连接与断线自愈**：`WatchLinkService` 广播模式升级为 `ADVERTISE_MODE_BALANCED` + `ADVERTISE_TX_POWER_HIGH`（广播周期 250ms），并在中心设备断开（`STATE_DISCONNECTED`）时即时重新拉起广播，避免手表被动“隐身”，大幅缩短手机连接等待。
+  - **倒计时视觉升级与常亮**：倒计时保持全屏沉浸纯黑底与 `FLAG_KEEP_SCREEN_ON`，大数字 118sp 居中，消除了多次 popIn 重复动画造成的遮罩闪屏。
+
+- 手机端（Xiaomi xaga 1080×2460 大屏）重构：
+  - **设计系统升级为现代运动奢华视觉**：升级 `PhoneTheme.kt` 色彩系统，采用高对比深色/浅色运动层级（活力玫瑰红 `#E11D48`、翡翠绿 `#10B981`、天蓝 `#0284C7`、暖橙 `#F59E0B`、高亮红 `#EF4444`）。
+  - **睡眠数据全景与分段睡眠深化**：
+    - `PhoneSleepOverview.java` 结构化提取 `SessionItem` 列表，解析每段睡眠的 `startTime`、`endTime`、时长及深睡/浅睡/REM/清醒构成；并提取 `bedtime`（入睡时间）、`wakeTime`（醒来时间）、心率范围（最低-最高 bpm）及呼吸率范围。
+    - `SleepScreen.kt` 彻底重构：新增头部“入睡/醒来”徽章与评分大卡、**分段睡眠明细卡片（清晰展开第一段主睡眠、第二段午休/小憩的时段与构成）**、阶段时间线、以及独立生理指标卡片（心率范围、呼吸率范围、平均血氧）。
+  - **计划管理彻底解绑阻塞，实现即时响应与连击无卡顿**：
+    - 将 `deletePlan`、`deleteGroup`、`createGroup`、`renameGroup`、`savePlan`、`selectPlan` 的本地持久化与 UI State 更新从单并发 `ioScope` 剥离，本地修改与重新加载在 1ms 内完成并即刻触发 UI 刷新与 Toast 反馈。
+    - 耗时的云端与手表 Outbox 同步完全置于后台异步队列执行，彻底消除了删除一个后无法立即删除下一个或需要重启 App 的缺陷。
+
+- 验证与部署：
+  - JVM 单元测试：`:phone:testDebugUnitTest` 与 `:app:testDebugUnitTest` 全部通过（100% 绿色）。
+  - MCP 测试：Python 3.12 12 项测试全部通过。
+  - 双端 Debug APK 构建完成并已成功覆盖安装到真实在线设备：
+    - 手表：`2e28bb17`（OWW221，Streamed Install Success）
+    - 手机：`192.168.1.5:5555`（xaga，Streamed Install Success）

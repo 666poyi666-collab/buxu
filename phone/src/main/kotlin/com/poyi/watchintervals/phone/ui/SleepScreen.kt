@@ -133,21 +133,48 @@ private fun SleepNightCard(night: SleepNightUi) {
     } else {
         "日期未返回"
     }
-    val fullDate = if (timeline.available()) {
-        "$date  ·  " +
-            SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(timeline.startTime)) +
-            " – " + SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(timeline.endTime))
-    } else {
-        date
-    }
+
+    val bedTimeStr = if (overview.bedtime > 0L) {
+        SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(overview.bedtime))
+    } else if (timeline.available()) {
+        SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(timeline.startTime))
+    } else null
+
+    val wakeTimeStr = if (overview.wakeTime > 0L) {
+        SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(overview.wakeTime))
+    } else if (timeline.available()) {
+        SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(timeline.endTime))
+    } else null
 
     PhoneCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(PhoneSpace.lg),
-            verticalArrangement = Arrangement.spacedBy(PhoneSpace.sm)
+            verticalArrangement = Arrangement.spacedBy(PhoneSpace.md)
         ) {
-            Text(text = fullDate, style = PhoneType.BodyStrong, color = PhoneColor.TextDim)
+            // 头部：日期与入睡/醒来起止
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "$date 睡眠", style = PhoneType.Headline, color = PhoneColor.Text)
+                if (bedTimeStr != null && wakeTimeStr != null) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(PhoneRadius.pill))
+                            .background(PhoneColor.SurfaceHigh)
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "入睡 $bedTimeStr  ·  醒来 $wakeTimeStr",
+                            style = PhoneType.Caption,
+                            color = PhoneColor.TextDim
+                        )
+                    }
+                }
+            }
 
+            // 核心双指标：评分与总时长
             Row(horizontalArrangement = Arrangement.spacedBy(PhoneSpace.sm)) {
                 SleepHero(
                     label = "睡眠评分",
@@ -163,6 +190,17 @@ private fun SleepNightCard(night: SleepNightUi) {
                 )
             }
 
+            // 分段睡眠明细（支持第一段、第二段/午休）
+            if (overview.sessions.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(PhoneSpace.xs)) {
+                    Text(text = "分段睡眠明细", style = PhoneType.Subhead, color = PhoneColor.Text)
+                    overview.sessions.forEach { session ->
+                        SleepSessionCard(session = session, totalCount = overview.sessions.size)
+                    }
+                }
+            }
+
+            // 阶段时间线
             Text(text = "阶段时间线", style = PhoneType.Subhead, color = PhoneColor.Text)
             if (timeline.available()) {
                 SleepStageTimeline(timeline = timeline, modifier = Modifier.fillMaxWidth())
@@ -181,15 +219,10 @@ private fun SleepNightCard(night: SleepNightUi) {
                 )
             }
 
-            Text(text = "阶段构成", style = PhoneType.Subhead, color = PhoneColor.Text)
+            // 阶段构成比例条与统计
+            Text(text = "全晚阶段构成", style = PhoneType.Subhead, color = PhoneColor.Text)
             if (overview.stageBreakdownAvailable) {
                 SleepStageBar(overview = overview, modifier = Modifier.fillMaxWidth())
-            } else {
-                Text(
-                    text = "系统未返回完整的深睡、浅睡、REM 与清醒时长，比例图已隐藏。",
-                    style = PhoneType.Body,
-                    color = PhoneColor.TextDim
-                )
             }
 
             Row {
@@ -225,35 +258,122 @@ private fun SleepNightCard(night: SleepNightUi) {
                 )
             }
 
-            if (overview.durationAvailable && overview.stageTotalMinutes() > 0L &&
-                abs(overview.totalDurationMinutes - overview.stageTotalMinutes()) > 10L
-            ) {
-                Text(
-                    text = "系统总时长 ${PhoneFormat.minutesHuman(overview.totalDurationMinutes.toInt())}，" +
-                        "阶段合计 ${PhoneFormat.minutesHuman(overview.stageTotalMinutes().toInt())}；" +
-                        "两组原始字段不一致，均按原值展示。",
-                    style = PhoneType.Caption,
-                    color = PhoneColor.Warning
-                )
-            }
+            // 生理指标卡片（心率范围、呼吸率、血氧）
+            SleepVitalsSection(overview = overview)
 
-            val health = ArrayList<String>()
-            if (overview.spo2Available) health.add("平均血氧 ${overview.spo2AveragePercent}%")
-            if (overview.heartRateAvailable) health.add("睡眠心率 ${overview.heartRateBenchmarkBpm} bpm")
-            if (overview.breathRateAvailable) {
-                health.add("呼吸 " + String.format(Locale.CHINA, "%.1f 次/分", overview.breathRateBenchmarkPerMinute))
-            }
-            Text(
-                text = if (health.isEmpty()) "血氧、心率与呼吸数据未返回" else health.joinToString(" · "),
-                style = PhoneType.Body,
-                color = PhoneColor.TextDim
-            )
             Text(
                 text = "${overview.sessionCount} 段睡眠 · ${overview.rawStageCount} 个系统原始阶段",
                 style = PhoneType.Caption,
                 color = PhoneColor.Hint
             )
         }
+    }
+}
+
+@Composable
+private fun SleepSessionCard(
+    session: com.poyi.watchintervals.phone.PhoneSleepOverview.SessionItem,
+    totalCount: Int
+) {
+    val sessionName = if (totalCount == 1) {
+        "主睡眠"
+    } else if (session.index == 1) {
+        "第一段睡眠 · 主睡眠"
+    } else {
+        "第 ${session.index} 段睡眠 · 午休 / 小憩"
+    }
+
+    val timeSpan = if (session.startTime > 0L && session.endTime > 0L) {
+        SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(session.startTime)) +
+            " – " + SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(session.endTime))
+    } else {
+        ""
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(PhoneRadius.card))
+            .background(PhoneColor.SurfaceHigh)
+            .padding(PhoneSpace.md)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(PhoneSpace.xs)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = sessionName, style = PhoneType.BodyStrong, color = PhoneColor.Text)
+                if (timeSpan.isNotBlank()) {
+                    Text(text = timeSpan, style = PhoneType.Caption, color = PhoneColor.TextDim)
+                }
+            }
+
+            val durationText = if (session.durationMinutes > 0L) {
+                PhoneFormat.minutesHuman(session.durationMinutes.toInt())
+            } else {
+                "--"
+            }
+            Text(text = "时长：$durationText", style = PhoneType.Caption, color = PhoneColor.Text)
+
+            // 该段睡眠阶段构成摘要
+            val parts = ArrayList<String>()
+            if (session.deepMinutes > 0L) parts.add("深睡 ${session.deepMinutes}分")
+            if (session.lightMinutes > 0L) parts.add("浅睡 ${session.lightMinutes}分")
+            if (session.remMinutes > 0L) parts.add("REM ${session.remMinutes}分")
+            if (session.awakeMinutes > 0L) parts.add("清醒 ${session.awakeMinutes}分")
+            if (parts.isNotEmpty()) {
+                Text(
+                    text = parts.joinToString("  |  "),
+                    style = PhoneType.Caption,
+                    color = PhoneColor.TextDim
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SleepVitalsSection(overview: com.poyi.watchintervals.phone.PhoneSleepOverview) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(PhoneRadius.card))
+            .background(PhoneColor.SurfaceHigh)
+            .padding(PhoneSpace.md),
+        verticalArrangement = Arrangement.spacedBy(PhoneSpace.xs)
+    ) {
+        Text(text = "生理指标", style = PhoneType.Subhead, color = PhoneColor.Text)
+
+        // 心率
+        val hrText = if (overview.heartRateAvailable) {
+            val range = if (overview.heartRateMinBpm > 0 && overview.heartRateMaxBpm > 0) {
+                "（范围 ${overview.heartRateMinBpm} – ${overview.heartRateMaxBpm} bpm）"
+            } else ""
+            "心率：${overview.heartRateBenchmarkBpm} bpm $range"
+        } else {
+            "心率：--"
+        }
+        Text(text = hrText, style = PhoneType.Caption, color = PhoneColor.Text)
+
+        // 呼吸率
+        val brText = if (overview.breathRateAvailable) {
+            val range = if (overview.breathRateMinPerMinute > 0 && overview.breathRateMaxPerMinute > 0) {
+                String.format(Locale.CHINA, "（范围 %.1f – %.1f 次/分）", overview.breathRateMinPerMinute, overview.breathRateMaxPerMinute)
+            } else ""
+            String.format(Locale.CHINA, "呼吸：%.1f 次/分 %s", overview.breathRateBenchmarkPerMinute, range)
+        } else {
+            "呼吸：--"
+        }
+        Text(text = brText, style = PhoneType.Caption, color = PhoneColor.Text)
+
+        // 血氧
+        val spo2Text = if (overview.spo2Available) {
+            "平均血氧：${overview.spo2AveragePercent}%"
+        } else {
+            "平均血氧：--"
+        }
+        Text(text = spo2Text, style = PhoneType.Caption, color = PhoneColor.Text)
     }
 }
 

@@ -35,31 +35,31 @@ object PhoneColor {
     val Hint = Color(0xFF5E6D7B)
     val OnAccent = Color(0xFFFFFFFF)
 
-    // 语义强调色
-    val Move = Color(0xFFC72C4D)
-    val Exercise = Color(0xFF247A3B)
-    val Stand = Color(0xFF00677D)
-    val Caution = Color(0xFF735400)
-    val Warning = Color(0xFFA9570C)
-    val Danger = Color(0xFFB3263A)
-    val Success = Color(0xFF1F7A43)
-    val ExerciseBright = Color(0xFF72D28C)
-    val StandBright = Color(0xFF62C7E2)
-    val DangerBright = Color(0xFFFF718B)
-    val WarningBright = Color(0xFFF0B35A)
+    // 语义强调色（现代高饱和高质感运动色系）
+    val Move = Color(0xFFE11D48)           // 活力玫瑰红 #E11D48
+    val Exercise = Color(0xFF10B981)       // 翡翠运动绿 #10B981
+    val Stand = Color(0xFF0284C7)          // 活力天蓝 #0284C7
+    val Caution = Color(0xFFD97706)        // 警示暖橙 #D97706
+    val Warning = Color(0xFFF59E0B)        // 明亮橙黄 #F59E0B
+    val Danger = Color(0xFFEF4444)         // 高亮警示红 #EF4444
+    val Success = Color(0xFF10B981)        // 成功绿 #10B981
+    val ExerciseBright = Color(0xFF34D399) // 亮绿 #34D399
+    val StandBright = Color(0xFF38BDF8)    // 亮青 #38BDF8
+    val DangerBright = Color(0xFFF87171)   // 亮红 #F87171
+    val WarningBright = Color(0xFFFBBF24)  // 亮黄 #FBBF24
 
     // 浅色语义填充
-    val FillRun = Color(0xFFE8F4E6)
-    val FillWalk = Color(0xFFE2F2F5)
-    val FillRest = Color(0xFFF7EFD8)
-    val FillDanger = Color(0xFFF9E7E9)
-    val FillSelected = Color(0xFFFFF0F3)
+    val FillRun = Color(0xFFECFDF5)
+    val FillWalk = Color(0xFFF0F9FF)
+    val FillRest = Color(0xFFFFFBEB)
+    val FillDanger = Color(0xFFFEF2F2)
+    val FillSelected = Color(0xFFFFF1F2)
 
-    // 睡眠阶段
-    val SleepDeep = Color(0xFF334E9D)
-    val SleepLight = Color(0xFF4F8FCF)
-    val SleepRem = Color(0xFF7650A8)
-    val SleepAwake = Color(0xFFB46516)
+    // 睡眠阶段（优雅清晰的多层光谱）
+    val SleepDeep = Color(0xFF3B82F6)      // 经典深睡蓝 #3B82F6
+    val SleepLight = Color(0xFF60A5FA)     // 浅睡天蓝 #60A5FA
+    val SleepRem = Color(0xFF8B5CF6)       // REM 梦境紫 #8B5CF6
+    val SleepAwake = Color(0xFFF59E0B)     // 清醒暖橙 #F59E0B
 
     // 玻璃功能层
     val GlassTop = Color(0xFFFFFFFF)

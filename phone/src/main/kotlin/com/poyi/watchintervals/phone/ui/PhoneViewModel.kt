@@ -315,7 +315,7 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
     // ---------------------------------------------------------------- 计划
 
     fun refreshPlans() {
-        ioScope.launch {
+        viewModelScope.launch(Dispatchers.Default) {
             val planState = planStateFrom(null)
             withContext(Dispatchers.Main) { _state.update { it.copy(plan = planState) } }
         }
@@ -672,7 +672,7 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch { _events.emit(PhoneEvent.Toast("至少添加一项训练内容")) }
             return
         }
-        ioScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val id = draft.id.ifBlank { UUID.randomUUID().toString() }
                 val stages = JSONArray()
@@ -692,14 +692,14 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
                     .put("requirement", draft.requirement.trim())
                     .put("stages", stages)
                 PhonePlanLibrary.upsert(app, profile)
-                queueLibrarySync("安排已同步到手表")
+                val newPlanState = planStateFrom(null)
                 withContext(Dispatchers.Main) {
                     _state.update {
-                        it.copy(plan = it.plan.copy(route = PlanRoute.Detail(id), draft = it.plan.draft.copy(id = id, dirty = false)))
+                        it.copy(plan = newPlanState.copy(route = PlanRoute.Detail(id), draft = it.plan.draft.copy(id = id, dirty = false)))
                     }
-                    refreshPlans()
                 }
                 _events.emit(PhoneEvent.Toast("安排已保存"))
+                viewModelScope.launch(Dispatchers.IO) { queueLibrarySync("安排已同步到手表") }
             } catch (error: Exception) {
                 _events.emit(PhoneEvent.Toast("保存失败：${userError(error)}"))
             }
@@ -707,12 +707,12 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deletePlan(planId: String) {
-        ioScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 PhonePlanLibrary.deletePlan(app, planId)
+                val newPlanState = planStateFrom(null)
                 withContext(Dispatchers.Main) {
-                    _state.update { it.copy(plan = it.plan.copy(route = PlanRoute.Library)) }
-                    refreshPlans()
+                    _state.update { it.copy(plan = newPlanState.copy(route = PlanRoute.Library)) }
                 }
                 _events.emit(PhoneEvent.Toast("安排已删除"))
                 viewModelScope.launch(Dispatchers.IO) { queueLibrarySync("安排已删除并同步") }
@@ -723,14 +723,15 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectPlan(planId: String) {
-        ioScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 PhonePlanLibrary.select(app, planId)
+                val newPlanState = planStateFrom(null)
                 withContext(Dispatchers.Main) {
-                    _state.update { it.copy(plan = it.plan.copy(route = PlanRoute.Detail(planId))) }
-                    refreshPlans()
+                    _state.update { it.copy(plan = newPlanState.copy(route = PlanRoute.Detail(planId))) }
                 }
-                queueLibrarySync("当前安排已同步到手表")
+                _events.emit(PhoneEvent.Toast("已设为手表当前安排"))
+                viewModelScope.launch(Dispatchers.IO) { queueLibrarySync("当前安排已同步到手表") }
             } catch (error: Exception) {
                 _events.emit(PhoneEvent.Toast("设为当前失败 · ${userError(error)}"))
             }
@@ -738,11 +739,15 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun createGroup(name: String) {
-        ioScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 PhonePlanLibrary.createGroup(app, name)
-                withContext(Dispatchers.Main) { refreshPlans() }
-                queueLibrarySync("训练计划已创建")
+                val newPlanState = planStateFrom(null)
+                withContext(Dispatchers.Main) {
+                    _state.update { it.copy(plan = newPlanState) }
+                }
+                _events.emit(PhoneEvent.Toast("训练计划已创建"))
+                viewModelScope.launch(Dispatchers.IO) { queueLibrarySync("训练计划已创建") }
             } catch (error: Exception) {
                 _events.emit(PhoneEvent.Toast("创建失败 · ${userError(error)}"))
             }
@@ -750,11 +755,15 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun renameGroup(groupId: String, name: String) {
-        ioScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 PhonePlanLibrary.renameGroup(app, groupId, name)
-                withContext(Dispatchers.Main) { refreshPlans() }
-                queueLibrarySync("计划名称已更新")
+                val newPlanState = planStateFrom(null)
+                withContext(Dispatchers.Main) {
+                    _state.update { it.copy(plan = newPlanState) }
+                }
+                _events.emit(PhoneEvent.Toast("计划名称已更新"))
+                viewModelScope.launch(Dispatchers.IO) { queueLibrarySync("计划名称已更新") }
             } catch (error: Exception) {
                 _events.emit(PhoneEvent.Toast("重命名失败 · ${userError(error)}"))
             }
@@ -762,14 +771,14 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteGroup(groupId: String) {
-        ioScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 PhonePlanLibrary.deleteGroup(app, groupId)
-                withContext(Dispatchers.Main) { refreshPlans() }
+                val newPlanState = planStateFrom(null)
+                withContext(Dispatchers.Main) {
+                    _state.update { it.copy(plan = newPlanState) }
+                }
                 _events.emit(PhoneEvent.Toast("分组及其中安排已删除"))
-                // The watch/cloud sync must NOT block the single-slot ioScope; otherwise a second
-                // delete right after this one waits behind a slow transport and looks dead. Run the
-                // sync on a background scope and let the next delete proceed immediately.
                 viewModelScope.launch(Dispatchers.IO) { queueLibrarySync("分组及其中安排已删除") }
             } catch (error: Exception) {
                 _events.emit(PhoneEvent.Toast("删除分组失败 · ${userError(error)}"))

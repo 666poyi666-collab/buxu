@@ -30,6 +30,7 @@ public class MainActivity extends WatchActivity {
     private static final int REQUEST_BACKGROUND_LOCATION = 11;
     private static final int REQUEST_SLEEP_PERMISSION = 12;
     private static final int REQUEST_WORKOUT_OVERLAY = 13;
+    private static final int REQUEST_HEALTH_PERMISSION = 14;
     private ArrayList<Stage> stages;
     private TextView ready, workout, start, planLine, planSummary, planDetails, sensorStatus,
             clock, activityTitle, activityType;
@@ -62,6 +63,14 @@ public class MainActivity extends WatchActivity {
             getPreferences(MODE_PRIVATE).edit().putBoolean("sleep_permission_prompted", true).apply();
             if (!SystemSleepBridge.requestPermission(this, REQUEST_SLEEP_PERMISSION)) {
                 getPreferences(MODE_PRIVATE).edit().putBoolean("sleep_permission_prompted", false).apply();
+            }
+        }
+        // The manufacturer health summary (daily activity / heart-rate stats) needs its own HealthKit
+        // permission, requested independently of sleep so a denied sleep prompt never blocks it.
+        if (!getPreferences(MODE_PRIVATE).getBoolean("health_permission_prompted", false)) {
+            getPreferences(MODE_PRIVATE).edit().putBoolean("health_permission_prompted", true).apply();
+            if (!SystemHealthBridge.requestPermission(this, REQUEST_HEALTH_PERMISSION)) {
+                getPreferences(MODE_PRIVATE).edit().putBoolean("health_permission_prompted", false).apply();
             }
         }
     }
@@ -390,6 +399,9 @@ public class MainActivity extends WatchActivity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_SLEEP_PERMISSION && resultCode != RESULT_OK) {
             getPreferences(MODE_PRIVATE).edit().putBoolean("sleep_permission_prompted", false).apply();
+        }
+        if (requestCode == REQUEST_HEALTH_PERMISSION && resultCode != RESULT_OK) {
+            getPreferences(MODE_PRIVATE).edit().putBoolean("health_permission_prompted", false).apply();
         }
         if (requestCode == REQUEST_WORKOUT_OVERLAY) startTraining();
     }

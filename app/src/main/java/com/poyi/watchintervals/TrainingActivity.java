@@ -172,7 +172,7 @@ public class TrainingActivity extends WatchActivity {
         center.setGravity(Gravity.CENTER);
         remainingLabel = Ui.bold(this, "剩余距离", Ui.LABEL, Ui.MUTED); remainingLabel.setGravity(Gravity.CENTER);
         center.addView(remainingLabel, new LinearLayout.LayoutParams(-2, -2));
-        remaining = Ui.numeral(this, "--", 46, Ui.WHITE); remaining.setGravity(Gravity.CENTER);
+        remaining = Ui.numeral(this, "--", 50, Ui.WHITE); remaining.setGravity(Gravity.CENTER);
         center.addView(remaining, new LinearLayout.LayoutParams(-2, -2));
         ringBox.addView(center, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
         // Let the ring panel consume the actual remaining 496 px canvas. The previous fixed
@@ -228,29 +228,29 @@ public class TrainingActivity extends WatchActivity {
         root.addView(header, new LinearLayout.LayoutParams(-1, Ui.dp(this, 40)));
 
         LinearLayout hero = new LinearLayout(this);
-        duration = Ui.metricCell(this, hero, "训练时间", "00:00", "", Ui.WHITE, 35);
-        coreRemaining = Ui.metricCell(this, hero, "本阶段剩余", "--", "", Ui.YELLOW, 35);
+        duration = Ui.metricCell(this, hero, "训练时间", "00:00", "", Ui.WHITE, 38);
+        coreRemaining = Ui.metricCell(this, hero, "本阶段剩余", "--", "", Ui.YELLOW, 36);
         root.addView(hero, new LinearLayout.LayoutParams(-1, Ui.dp(this, 68)));
         root.addView(Ui.divider(this));
 
         LinearLayout distanceRow = new LinearLayout(this);
-        distance = Ui.metricCell(this, distanceRow, "距离", "0.00", "公里", Ui.LIME, 29);
-        root.addView(distanceRow, new LinearLayout.LayoutParams(-1, Ui.dp(this, 49)));
+        distance = Ui.metricCell(this, distanceRow, "距离", "0.00", "公里", Ui.LIME, 32);
+        root.addView(distanceRow, new LinearLayout.LayoutParams(-1, Ui.dp(this, 50)));
         root.addView(Ui.divider(this));
 
         LinearLayout primary = new LinearLayout(this);
-        pace = Ui.metricCell(this, primary, "当前配速", "--", "/公里", Ui.CYAN, 31);
-        heart = Ui.metricCell(this, primary, "当前心率", "--", "次/分", Ui.RED, 31);
-        LinearLayout.LayoutParams primaryParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 62));
+        pace = Ui.metricCell(this, primary, "当前配速", "--", "/公里", Ui.CYAN, 32);
+        heart = Ui.metricCell(this, primary, "当前心率", "--", "次/分", Ui.RED, 34);
+        LinearLayout.LayoutParams primaryParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 64));
         primaryParams.topMargin = Ui.dp(this, 4); primaryParams.bottomMargin = Ui.dp(this, 4);
         root.addView(primary, primaryParams);
         root.addView(Ui.divider(this));
 
         LinearLayout compact = new LinearLayout(this);
-        cadence = Ui.metricCell(this, compact, "步频", "--", "spm", Ui.YELLOW, 21);
-        calories = Ui.metricCell(this, compact, "热量", "0", "千卡", Ui.AMBER, 21);
-        climb = Ui.metricCell(this, compact, "累计爬升", "0", "米", Ui.LIME, 21);
-        root.addView(compact, new LinearLayout.LayoutParams(-1, Ui.dp(this, 51)));
+        cadence = Ui.metricCell(this, compact, "步频", "--", "spm", Ui.YELLOW, 22);
+        calories = Ui.metricCell(this, compact, "热量", "0", "千卡", Ui.AMBER, 22);
+        climb = Ui.metricCell(this, compact, "累计爬升", "0", "米", Ui.LIME, 22);
+        root.addView(compact, new LinearLayout.LayoutParams(-1, Ui.dp(this, 50)));
 
         zoneBar = new Ui.ZoneBar(this);
         LinearLayout.LayoutParams zoneParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 10));

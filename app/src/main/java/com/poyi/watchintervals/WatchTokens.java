@@ -22,13 +22,13 @@ final class WatchTokens {
     static final int LINE = Color.rgb(44, 48, 54);
 
     // ---- 语义强调色 -------------------------------------------------------
-    static final int LIME = Color.rgb(174, 234, 66);
-    static final int YELLOW = Color.rgb(245, 196, 81);
-    static final int CYAN = Color.rgb(91, 192, 222);
-    static final int AMBER = Color.rgb(243, 169, 59);
-    static final int RED = Color.rgb(255, 91, 114);
-    static final int GREEN = Color.rgb(82, 200, 120);
-    static final int BRAND = Color.rgb(210, 47, 85);
+    static final int LIME = Color.rgb(48, 209, 88);       // #30D158 活力荧光绿
+    static final int YELLOW = Color.rgb(255, 214, 10);     // #FFD60A 明亮黄
+    static final int CYAN = Color.rgb(56, 189, 248);      // #38BDF8 醒目青
+    static final int AMBER = Color.rgb(255, 159, 10);     // #FF9F0A 暖橙
+    static final int RED = Color.rgb(255, 51, 75);        // #FF334B 高对比亮红（心率专用）
+    static final int GREEN = Color.rgb(52, 199, 89);      // #34C759 运动绿
+    static final int BRAND = Color.rgb(255, 45, 85);      // #FF2D55 品牌活力红
 
     /**
      * 语义色的浅色底。用于芯片、徽章与强调面板的填充,
@@ -46,22 +46,22 @@ final class WatchTokens {
     static final int SCRIM = Color.argb(190, 0, 0, 0);
 
     // ---- 字号阶梯 ---------------------------------------------------------
-    static final float DISPLAY = 44f;
-    static final float TITLE = 22f;
-    static final float HEADLINE = 17f;
-    static final float BODY = 13f;
-    static final float LABEL = 11f;
-    static final float CAPTION = 9.5f;
+    static final float DISPLAY = 46f;
+    static final float TITLE = 23f;
+    static final float HEADLINE = 18f;
+    static final float BODY = 14f;
+    static final float LABEL = 12f;
+    static final float CAPTION = 11f;
     /** 领跑的计时数字。 */
     static final float FIGURE_HERO = 52f;
     /** 训练页其余指标数字。 */
     static final float FIGURE = 38f;
     /** 跟随数字基线的单位标签。 */
-    static final float FIGURE_LABEL = 15f;
-    /** 阶段倒计时页三列实时指标的紧凑尺寸。 */
-    static final float STAGE_METRIC_FIGURE = 20f;
-    static final float STAGE_METRIC_ROW = 45f;
-    static final float STAGE_METRIC_GAP = 1f;
+    static final float FIGURE_LABEL = 14f;
+    /** 阶段倒计时页三列实时指标的放大尺寸（抬腕一眼看清）。 */
+    static final float STAGE_METRIC_FIGURE = 26f;
+    static final float STAGE_METRIC_ROW = 56f;
+    static final float STAGE_METRIC_GAP = 2f;
 
     // ---- 间距与形状 -------------------------------------------------------
     /** 页面左右边距。整机动效接近贴边。 */

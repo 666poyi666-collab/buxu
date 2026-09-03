@@ -74,11 +74,37 @@ public final class WatchLinkService extends Service {
 
     private void add(BluetoothGattService service,UUID uuid,int properties,int permissions,boolean cccd){BluetoothGattCharacteristic value=new BluetoothGattCharacteristic(uuid,properties,permissions);if(cccd||uuid.equals(BleUuids.PAIRING))value.addDescriptor(new BluetoothGattDescriptor(BleUuids.CCCD,BluetoothGattDescriptor.PERMISSION_READ|BluetoothGattDescriptor.PERMISSION_WRITE));service.addCharacteristic(value);characteristics.put(uuid,value);}
 
-    @SuppressWarnings("MissingPermission") private void startAdvertising(){if(advertising||server==null)return;BluetoothAdapter adapter=manager.getAdapter();advertiser=adapter==null?null:adapter.getBluetoothLeAdvertiser();if(advertiser==null){Log.e(TAG,"advertiser_unavailable");return;}AdvertiseSettings settings=new AdvertiseSettings.Builder().setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER).setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM).setConnectable(true).build();AdvertiseData data=new AdvertiseData.Builder().addServiceUuid(new ParcelUuid(BleUuids.SERVICE)).setIncludeDeviceName(false).build();advertiseCallback=new AdvertiseCallback(){@Override public void onStartSuccess(AdvertiseSettings value){advertising=true;Log.i(TAG,"advertising_ready");}@Override public void onStartFailure(int code){advertising=false;Log.e(TAG,"advertising_failed status="+code);}};advertiser.startAdvertising(settings,data,advertiseCallback);}
+    @SuppressWarnings("MissingPermission") private synchronized void startAdvertising(){
+        if(advertising||server==null)return;
+        BluetoothAdapter adapter=manager==null?null:manager.getAdapter();
+        advertiser=adapter==null?null:adapter.getBluetoothLeAdvertiser();
+        if(advertiser==null){Log.e(TAG,"advertiser_unavailable");return;}
+        AdvertiseSettings settings=new AdvertiseSettings.Builder()
+                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
+                .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+                .setConnectable(true).build();
+        AdvertiseData data=new AdvertiseData.Builder().addServiceUuid(new ParcelUuid(BleUuids.SERVICE)).setIncludeDeviceName(false).build();
+        advertiseCallback=new AdvertiseCallback(){
+            @Override public void onStartSuccess(AdvertiseSettings value){advertising=true;Log.i(TAG,"advertising_ready");}
+            @Override public void onStartFailure(int code){
+                if(code==AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED){advertising=true;}
+                else{advertising=false;Log.e(TAG,"advertising_failed status="+code);}
+            }
+        };
+        advertiser.startAdvertising(settings,data,advertiseCallback);
+    }
 
     private final BluetoothGattServerCallback callback=new BluetoothGattServerCallback(){
         @Override public void onServiceAdded(int status,BluetoothGattService service){if(status==BluetoothGatt.GATT_SUCCESS)startAdvertising();else Log.e(TAG,"service_add status="+status);}
-        @Override public void onConnectionStateChange(BluetoothDevice device,int status,int state){String key=device.getAddress();Log.i(TAG,"connection state="+state+" status="+status+" device="+redact(key));if(state==BluetoothProfile.STATE_CONNECTED){synchronized(WatchLinkService.this){mtuByDevice.put(key,DEFAULT_MTU);connectedDevices.put(key,device);}}else if(state==BluetoothProfile.STATE_DISCONNECTED){synchronized(WatchLinkService.this){mtuByDevice.remove(key);connectedDevices.remove(key);authenticated.remove(key);secureSessions.remove(key);pendingPairings.remove(key);subscribedEvents.remove(key);outgoing.remove(key);notifying.remove(key);removeAssemblers(key);}}}
+        @Override public void onConnectionStateChange(BluetoothDevice device,int status,int state){String key=device.getAddress();Log.i(TAG,"connection state="+state+" status="+status+" device="+redact(key));if(state==BluetoothProfile.STATE_CONNECTED){synchronized(WatchLinkService.this){mtuByDevice.put(key,DEFAULT_MTU);connectedDevices.put(key,device);}}else if(state==BluetoothProfile.STATE_DISCONNECTED){
+                synchronized(WatchLinkService.this){
+                    mtuByDevice.remove(key);connectedDevices.remove(key);authenticated.remove(key);
+                    secureSessions.remove(key);pendingPairings.remove(key);subscribedEvents.remove(key);
+                    outgoing.remove(key);notifying.remove(key);removeAssemblers(key);
+                }
+                advertising=false;
+                startAdvertising();
+            }}
         @Override public void onMtuChanged(BluetoothDevice device,int mtu){synchronized(WatchLinkService.this){mtuByDevice.put(device.getAddress(),Math.max(DEFAULT_MTU,mtu));}Log.i(TAG,"mtu="+mtu+" device="+redact(device.getAddress()));}
         @Override public void onCharacteristicReadRequest(BluetoothDevice device,int requestId,int offset,BluetoothGattCharacteristic characteristic){byte[] value=readValue(device,characteristic.getUuid());sendRead(device,requestId,offset,value);}
         @Override public void onDescriptorReadRequest(BluetoothDevice device,int requestId,int offset,BluetoothGattDescriptor descriptor){byte[] value=subscribedEvents.contains(device.getAddress())?BluetoothGattDescriptor.ENABLE_INDICATION_VALUE:BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE;sendRead(device,requestId,offset,value);}

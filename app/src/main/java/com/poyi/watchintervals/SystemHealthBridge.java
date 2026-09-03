@@ -1,5 +1,6 @@
 package com.poyi.watchintervals;
 
+import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -36,6 +37,11 @@ final class SystemHealthBridge {
     private static final int TRANSACTION_READ_RECORDS = 5;
 
     private static final String PREFIX = "com.oplus.wearable.healthkit.proto.";
+    private static final String PERMISSION_ACTION =
+            "heytap.wearable.intent.action.health.ACTION_REQUEST_PERMISSIONS";
+    private static final String[] HEALTH_RECORD_TYPES = {
+        "DailyActivityRecord", "HeartRateStatsRecord", "HeartRateRecord",
+    };
 
     private final Context context;
     private final Object connectionLock = new Object();
@@ -46,6 +52,34 @@ final class SystemHealthBridge {
 
     SystemHealthBridge(Context context) {
         this.context = context.getApplicationContext();
+    }
+
+    /** Requests HealthKit read permission for the manufacturer health record types. */
+    static boolean requestPermission(Activity activity, int requestCode) {
+        try {
+            ClassLoader loader = healthLoader(activity);
+            Class<?> permissionProto = Class.forName(
+                    "com.oplus.wearable.healthkit.proto.StoreProto$Permission", true, loader);
+            Class<?> permissionsProto = Class.forName(
+                    "com.oplus.wearable.healthkit.proto.StoreProto$Permissions", true, loader);
+            Object permissionsBuilder = permissionsProto.getMethod("newBuilder").invoke(null);
+            for (String type : HEALTH_RECORD_TYPES) {
+                Object permission = permissionProto.getMethod("newBuilder").invoke(null);
+                invoke(permission, "setDataType", String.class, type);
+                invoke(permission, "setAccessType", int.class, 1);
+                Object built = permission.getClass().getMethod("build").invoke(permission);
+                invoke(permissionsBuilder, "addPermissions", permissionProto, built);
+            }
+            Object permissions = permissionsBuilder.getClass().getMethod("build").invoke(permissionsBuilder);
+            byte[] data = (byte[]) permissions.getClass().getMethod("toByteArray").invoke(permissions);
+            Intent intent = new Intent(PERMISSION_ACTION).setPackage(HEALTH_PACKAGE)
+                    .putExtra("EXTRA_DATA", data);
+            activity.startActivityForResult(intent, requestCode);
+            return true;
+        } catch (Throwable error) {
+            Log.w(TAG, "Unable to open system health permission screen", error);
+            return false;
+        }
     }
 
     JSONObject read(int requestedDays) {

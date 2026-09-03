@@ -980,6 +980,7 @@ public class WorkoutService extends Service implements LocationListener, SensorE
 
     private void showSurfaceRestoreOverlay(Intent open, boolean restorePreparation) {
         removeSurfaceRestoreOverlay();
+        if (!Settings.canDrawOverlays(this)) return;
         surfaceWindowManager = getSystemService(WindowManager.class);
         if (surfaceWindowManager == null) return;
 

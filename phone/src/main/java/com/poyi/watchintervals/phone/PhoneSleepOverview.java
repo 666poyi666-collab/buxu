@@ -27,6 +27,37 @@ public final class PhoneSleepOverview {
     public final boolean stageBreakdownAvailable;
     public final int sessionCount;
     public final int rawStageCount;
+    public static final class SessionItem {
+        public final int index;
+        public final long startTime;
+        public final long endTime;
+        public final long durationMinutes;
+        public final long deepMinutes;
+        public final long lightMinutes;
+        public final long remMinutes;
+        public final long awakeMinutes;
+
+        public SessionItem(int index, long startTime, long endTime, long durationMinutes,
+                           long deepMinutes, long lightMinutes, long remMinutes, long awakeMinutes) {
+            this.index = index;
+            this.startTime = startTime;
+            this.endTime = endTime;
+            this.durationMinutes = durationMinutes;
+            this.deepMinutes = deepMinutes;
+            this.lightMinutes = lightMinutes;
+            this.remMinutes = remMinutes;
+            this.awakeMinutes = awakeMinutes;
+        }
+    }
+
+    public final java.util.List<SessionItem> sessions;
+    public final long bedtime;
+    public final long wakeTime;
+    public final int heartRateMinBpm;
+    public final int heartRateMaxBpm;
+    public final double breathRateMinPerMinute;
+    public final double breathRateMaxPerMinute;
+
 
     private PhoneSleepOverview(long timestamp, long totalDurationMinutes,
             boolean durationAvailable, int sleepScore, boolean scoreAvailable,
@@ -36,7 +67,10 @@ public final class PhoneSleepOverview {
             long remMinutes, long awakeMinutes, boolean deepAvailable,
             boolean lightAvailable, boolean remAvailable, boolean awakeAvailable,
             boolean stageBreakdownAvailable,
-            int sessionCount, int rawStageCount) {
+            int sessionCount, int rawStageCount,
+            java.util.List<SessionItem> sessions, long bedtime, long wakeTime,
+            int heartRateMinBpm, int heartRateMaxBpm,
+            double breathRateMinPerMinute, double breathRateMaxPerMinute) {
         this.timestamp = timestamp;
         this.totalDurationMinutes = totalDurationMinutes;
         this.durationAvailable = durationAvailable;
@@ -59,6 +93,13 @@ public final class PhoneSleepOverview {
         this.stageBreakdownAvailable = stageBreakdownAvailable;
         this.sessionCount = sessionCount;
         this.rawStageCount = rawStageCount;
+        this.sessions = sessions != null ? java.util.Collections.unmodifiableList(sessions) : java.util.Collections.emptyList();
+        this.bedtime = bedtime;
+        this.wakeTime = wakeTime;
+        this.heartRateMinBpm = heartRateMinBpm;
+        this.heartRateMaxBpm = heartRateMaxBpm;
+        this.breathRateMinPerMinute = breathRateMinPerMinute;
+        this.breathRateMaxPerMinute = breathRateMaxPerMinute;
     }
 
     public static PhoneSleepOverview from(JSONObject record) {
@@ -71,33 +112,45 @@ public final class PhoneSleepOverview {
         boolean deepPresent = false, lightPresent = false, remPresent = false,
                 awakePresent = false;
         int stageCount = 0;
+        java.util.ArrayList<SessionItem> sessionItems = new java.util.ArrayList<>();
+        long bedtime = 0L;
+        long wakeTime = 0L;
         for (int index = 0; index < sessionCount; index++) {
             JSONObject session = sessions.optJSONObject(index);
             if (session == null) continue;
             long start = positiveLong(session, "startTime");
+            long end = positiveLong(session, "endTime");
             if (start > 0L && (earliest <= 0L || start < earliest)) earliest = start;
+            if (start > 0L && (bedtime <= 0L || start < bedtime)) bedtime = start;
+            if (end > 0L && end > wakeTime) wakeTime = end;
+            long sDuration = nonNegativeLong(session, "sleepDurationMinutes");
+            long sDeep = nonNegativeLong(session, "deepDurationMinutes");
+            long sLight = nonNegativeLong(session, "lightDurationMinutes");
+            long sRem = nonNegativeLong(session, "remDurationMinutes");
+            long sAwake = nonNegativeLong(session, "awakeDurationMinutes");
             if (hasNumber(session, "sleepDurationMinutes")) {
                 sessionDurationPresent = true;
-                sessionDuration += nonNegativeLong(session, "sleepDurationMinutes");
+                sessionDuration += sDuration;
             }
             if (hasNumber(session, "deepDurationMinutes")) {
                 deepPresent = true;
-                deep += nonNegativeLong(session, "deepDurationMinutes");
+                deep += sDeep;
             }
             if (hasNumber(session, "lightDurationMinutes")) {
                 lightPresent = true;
-                light += nonNegativeLong(session, "lightDurationMinutes");
+                light += sLight;
             }
             if (hasNumber(session, "remDurationMinutes")) {
                 remPresent = true;
-                rem += nonNegativeLong(session, "remDurationMinutes");
+                rem += sRem;
             }
             if (hasNumber(session, "awakeDurationMinutes")) {
                 awakePresent = true;
-                awake += nonNegativeLong(session, "awakeDurationMinutes");
+                awake += sAwake;
             }
             JSONArray stages = session.optJSONArray("stages");
             stageCount += stages == null ? 0 : stages.length();
+            sessionItems.add(new SessionItem(index + 1, start, end, sDuration, sDeep, sLight, sRem, sAwake));
         }
 
         boolean recordDurationPresent = hasNumber(record, "totalDurationMinutes")
@@ -112,11 +165,19 @@ public final class PhoneSleepOverview {
         double breathRate = nonNegativeDouble(record, "breathRateBenchmarkPerMinute");
         boolean stageBreakdown = deepPresent && lightPresent && remPresent && awakePresent
                 && deep + light + rem + awake > 0L;
+        JSONObject hrRange = record == null ? null : record.optJSONObject("heartRateRangeBpm");
+        int hrMin = hrRange != null ? nonNegativeInt(hrRange, "minimum") : 0;
+        int hrMax = hrRange != null ? nonNegativeInt(hrRange, "maximum") : 0;
+        JSONObject brRange = record == null ? null : record.optJSONObject("breathRateRangePerMinute");
+        double brMin = brRange != null ? nonNegativeDouble(brRange, "minimum") : 0d;
+        double brMax = brRange != null ? nonNegativeDouble(brRange, "maximum") : 0d;
+
         return new PhoneSleepOverview(earliest, duration, durationAvailable,
                 score, score > 0, spo2, spo2 > 0, heartRate, heartRate > 0,
                 breathRate, breathRate > 0d, deep, light, rem, awake, deepPresent,
                 lightPresent, remPresent, awakePresent, stageBreakdown,
-                sessionCount, stageCount);
+                sessionCount, stageCount, sessionItems, bedtime, wakeTime,
+                hrMin, hrMax, brMin, brMax);
     }
 
     public long stageTotalMinutes() {
