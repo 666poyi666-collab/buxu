@@ -182,12 +182,12 @@ public class TrainingActivity extends WatchActivity {
         center.setOrientation(LinearLayout.VERTICAL);
         center.setGravity(Gravity.CENTER);
 
-        stageName = Ui.bold(this, "准备", 21, Ui.LIME);
+        stageName = Ui.bold(this, "准备", 16, Ui.LIME);
         stageName.setGravity(Gravity.CENTER);
         stageName.setSingleLine(true);
         center.addView(stageName, new LinearLayout.LayoutParams(-2, -2));
 
-        remaining = Ui.numeral(this, "--", 44, Ui.WHITE);
+        remaining = Ui.numeral(this, "--", 56, Ui.WHITE);
         remaining.setGravity(Gravity.CENTER);
         center.addView(remaining, new LinearLayout.LayoutParams(-2, -2));
 
@@ -196,34 +196,32 @@ public class TrainingActivity extends WatchActivity {
         center.addView(remainingLabel, new LinearLayout.LayoutParams(-2, -2));
 
         stadiumBox.addView(center, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
-        root.addView(stadiumBox, new LinearLayout.LayoutParams(-1, Ui.dp(this, 122)));
+        root.addView(stadiumBox, new LinearLayout.LayoutParams(-1, Ui.dp(this, 124)));
 
         LinearLayout deck = new LinearLayout(this);
         deck.setOrientation(LinearLayout.VERTICAL);
 
         LinearLayout row1 = new LinearLayout(this);
         row1.setGravity(Gravity.CENTER_VERTICAL);
-        stageHeart = Ui.metricCell(this, row1, "当前心率", "--", "次/分", Ui.RED, Ui.STAGE_METRIC_FIGURE);
-        stagePace = Ui.metricCell(this, row1, "当前配速", "--", "/公里", Ui.CYAN, Ui.STAGE_METRIC_FIGURE);
+        stageHeart = Ui.metricCell(this, row1, "心率", "--", "次/分", Ui.RED, Ui.STAGE_METRIC_FIGURE);
+        stagePace = Ui.metricCell(this, row1, "配速", "--", "/公里", Ui.CYAN, Ui.STAGE_METRIC_FIGURE);
         deck.addView(row1, new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.STAGE_METRIC_ROW)));
 
         LinearLayout row2 = new LinearLayout(this);
         row2.setGravity(Gravity.CENTER_VERTICAL);
-        stageDistance = Ui.metricCell(this, row2, "累计距离", "0.00", "公里", Ui.LIME, Ui.STAGE_METRIC_FIGURE);
-        stageCalories = Ui.metricCell(this, row2, "估算热量", "0", "千卡", Ui.AMBER, Ui.STAGE_METRIC_FIGURE);
+        stageDistance = Ui.metricCell(this, row2, "距离", "0.00", "公里", Ui.LIME, Ui.STAGE_METRIC_FIGURE);
+        stageCalories = Ui.metricCell(this, row2, "热量", "0", "千卡", Ui.AMBER, Ui.STAGE_METRIC_FIGURE);
         LinearLayout.LayoutParams row2Params = new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.STAGE_METRIC_ROW));
         row2Params.topMargin = Ui.dp(this, Ui.STAGE_METRIC_GAP);
         deck.addView(row2, row2Params);
 
         LinearLayout.LayoutParams deckParams = new LinearLayout.LayoutParams(-1, -2);
-        deckParams.topMargin = Ui.dp(this, 6);
+        deckParams.topMargin = Ui.dp(this, 8);
         root.addView(deck, deckParams);
 
         stageProgress = Ui.text(this, "", Ui.LABEL, Ui.MUTED);
         stageProgress.setVisibility(View.GONE);
         root.addView(stageProgress, new LinearLayout.LayoutParams(0, 0));
-
-        root.addView(Ui.pagerDots(this, STAGE_PAGE, 5), new LinearLayout.LayoutParams(-1, Ui.dp(this, 8)));
         return root;
     }
 
