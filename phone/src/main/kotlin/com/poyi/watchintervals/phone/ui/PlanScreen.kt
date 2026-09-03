@@ -51,6 +51,7 @@ import com.poyi.watchintervals.phone.ui.components.PhoneAction
 import com.poyi.watchintervals.phone.ui.components.PhoneBadge
 import com.poyi.watchintervals.phone.ui.components.PhoneButton
 import com.poyi.watchintervals.phone.ui.components.PhoneCard
+import com.poyi.watchintervals.phone.ui.components.PhoneCardStyle
 import com.poyi.watchintervals.phone.ui.components.PhoneEmptyState
 import com.poyi.watchintervals.phone.ui.components.PhoneDivider
 import com.poyi.watchintervals.phone.ui.components.PhoneInput
@@ -132,12 +133,14 @@ private fun TodayPlan(
     }
     val live = state.workout.live?.takeIf { it.hasWorkout }
     val latest = state.history.records.firstOrNull()
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PlanListPadding,
         verticalArrangement = Arrangement.spacedBy(PhoneSpace.md)
     ) {
         item { PhonePageHeader(title = "今天", subtitle = "") }
+
         if (!state.setup.cloud.configured || !state.setup.cloud.tokenSaved) {
             item {
                 PhoneButton(
@@ -150,56 +153,20 @@ private fun TodayPlan(
                 )
             }
         }
+
+        // 核心今日英雄训练卡
         item {
-            PhoneCard(
-                modifier = Modifier.fillMaxWidth(),
-                containerColor = PhoneColor.Navigation,
-                borderColor = PhoneColor.NavigationLine
-            ) {
-                Column(
-                    modifier = Modifier.padding(PhoneSpace.lg),
-                    verticalArrangement = Arrangement.spacedBy(PhoneSpace.sm)
-                ) {
-                    Text(
-                        if (live == null) "今日安排" else if (live.paused) "训练已暂停" else "训练进行中",
-                        style = PhoneType.Caption,
-                        color = if (live == null) PhoneColor.NavigationMuted else PhoneColor.ExerciseBright
-                    )
-                    Text(
-                        text = live?.stageName?.ifBlank { null }
-                            ?: current?.name
-                            ?: plan.watchCurrentName.ifBlank { "尚未选择训练" },
-                        style = PhoneType.Title,
-                        color = PhoneColor.NavigationText
-                    )
-                    Text(
-                        text = live?.let {
-                            "第 ${it.stageNumber}/${it.stageCount} 项 · ${com.poyi.watchintervals.phone.PhoneFormat.duration(it.activeDurationMs)} · ${com.poyi.watchintervals.phone.PhoneFormat.distance(it.distanceMeters)}"
-                        } ?: current?.let { "${it.groupName} · ${it.summary}" }
-                        ?: plan.watchCurrentGroup.ifBlank { "进入计划库选择安排" },
-                        style = PhoneType.Body,
-                        color = PhoneColor.NavigationMuted
-                    )
-                    if (current != null) {
-                        PlanStageTrack(current.stages)
-                        Text(
-                            text = current.sequence,
-                            style = PhoneType.BodyStrong,
-                            color = PhoneColor.NavigationText,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    PhoneButton(
-                        text = if (live == null) "打开训练控制" else "查看实时训练",
-                        onClick = { viewModel.selectSection(1) },
-                        action = PhoneAction.Primary,
-                        modifier = Modifier.fillMaxWidth(),
-                        icon = PhoneIcons.Play
-                    )
-                }
-            }
+            TodayHeroCard(
+                current = current,
+                live = live,
+                fallbackName = plan.watchCurrentName,
+                fallbackGroup = plan.watchCurrentGroup,
+                onStartWorkout = { viewModel.selectSection(1) },
+                onSelectPlan = { if (current != null) viewModel.selectPlan(current.id) }
+            )
         }
+
+        // 快捷功能按键区
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -213,7 +180,7 @@ private fun TodayPlan(
                     icon = PhoneIcons.Plan
                 )
                 PhoneButton(
-                    text = "训练记录",
+                    text = "训练历史",
                     onClick = { viewModel.selectSection(2) },
                     action = PhoneAction.Secondary,
                     modifier = Modifier.weight(1f),
@@ -221,21 +188,26 @@ private fun TodayPlan(
                 )
             }
         }
+
+        // 当前计划所属分组概览
         if (visibleSchedule.isNotEmpty()) {
             item {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(PhoneSpace.xs)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = current?.groupName ?: "当前分组",
+                            text = current?.groupName ?: "当前训练安排",
                             style = PhoneType.Subhead,
-                            color = PhoneColor.Text,
-                            modifier = Modifier.weight(1f)
+                            color = PhoneColor.Text
                         )
                         Text(
-                            text = "${currentIndex + 1} / ${currentGroupPlans.size}",
+                            text = "${(currentIndex + 1).coerceAtLeast(1)} / ${currentGroupPlans.size}",
                             style = PhoneType.Caption,
                             color = PhoneColor.TextDim
                         )
@@ -249,27 +221,33 @@ private fun TodayPlan(
                 }
             }
         }
+
+        // 最近一次训练复盘卡
         item {
-            PhoneCard(modifier = Modifier.fillMaxWidth()) {
+            PhoneCard(
+                modifier = Modifier.fillMaxWidth(),
+                style = PhoneCardStyle.Large
+            ) {
                 Column(
                     modifier = Modifier.padding(PhoneSpace.lg),
                     verticalArrangement = Arrangement.spacedBy(PhoneSpace.sm)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = "最近训练",
+                            text = "最近一次训练",
                             style = PhoneType.Subhead,
-                            color = PhoneColor.Text,
-                            modifier = Modifier.weight(1f)
+                            color = PhoneColor.Text
                         )
                         Text(
                             text = state.history.summary.ifBlank {
                                 if (latest == null) "暂无记录" else "已同步"
                             },
                             style = PhoneType.Caption,
-                            color = PhoneColor.TextDim,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            color = PhoneColor.TextDim
                         )
                     }
                     PhoneDivider()
@@ -291,7 +269,7 @@ private fun TodayPlan(
                         )
                         PhoneMetric(
                             label = "平均心率",
-                            value = latest?.averageHeartRate?.takeIf { it > 0 }?.toString() ?: "--",
+                            value = latest?.averageHeartRate?.takeIf { it > 0 }?.let { "$it bpm" } ?: "--",
                             valueColor = PhoneColor.Danger,
                             modifier = Modifier.weight(1f)
                         )
@@ -299,6 +277,7 @@ private fun TodayPlan(
                 }
             }
         }
+
         if (state.sync.message.isNotBlank() || state.sync.lastSyncLabel.isNotBlank()) {
             item {
                 Text(
@@ -309,6 +288,124 @@ private fun TodayPlan(
                     textAlign = TextAlign.Center
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun TodayHeroCard(
+    current: PlanSummary?,
+    live: LiveWorkout?,
+    fallbackName: String,
+    fallbackGroup: String,
+    onStartWorkout: () -> Unit,
+    onSelectPlan: () -> Unit
+) {
+    val containerBg = Color(0xFF0F172A)
+    val borderCol = Color(0xFF1E293B)
+
+    PhoneCard(
+        modifier = Modifier.fillMaxWidth(),
+        containerColor = containerBg,
+        borderColor = borderCol,
+        style = PhoneCardStyle.Large
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(PhoneSpace.lg),
+            verticalArrangement = Arrangement.spacedBy(PhoneSpace.md)
+        ) {
+            // 顶栏状态徽章与分组标签
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(if (live != null) PhoneColor.ExerciseBright else PhoneColor.StandBright)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (live != null) "训练进行中" else "今日当前安排",
+                        style = PhoneType.Caption,
+                        color = if (live != null) PhoneColor.ExerciseBright else PhoneColor.StandBright
+                    )
+                }
+
+                val groupText = current?.groupName?.ifBlank { null } ?: fallbackGroup.ifBlank { "间歇训练" }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(Color(0xFF1E293B))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = groupText,
+                        style = PhoneType.Caption,
+                        color = PhoneColor.NavigationMuted
+                    )
+                }
+            }
+
+            // 计划主标题
+            val titleText = live?.stageName?.ifBlank { null }
+                ?: current?.name
+                ?: fallbackName.ifBlank { "尚未选择训练" }
+            Text(
+                text = titleText,
+                style = PhoneType.Display,
+                color = PhoneColor.NavigationText,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+            )
+
+            // 阶段动线多色条
+            if (current != null && current.stages.isNotEmpty()) {
+                PlanStageTrack(current.stages)
+                Text(
+                    text = current.sequence,
+                    style = PhoneType.BodyStrong,
+                    color = PhoneColor.StandBright
+                )
+            }
+
+            // 核心训练要求/教练指导卡片
+            val requirementText = current?.requirement?.trim().orEmpty()
+            if (requirementText.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF1E293B).copy(alpha = 0.7f))
+                        .padding(PhoneSpace.md)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "💡 训练指导与自适应建议",
+                            style = PhoneType.Caption,
+                            color = PhoneColor.WarningBright
+                        )
+                        Text(
+                            text = requirementText,
+                            style = PhoneType.Body,
+                            color = PhoneColor.NavigationText.copy(alpha = 0.9f)
+                        )
+                    }
+                }
+            }
+
+            // 底部主操作按钮
+            PhoneButton(
+                text = if (live == null) "打开训练控制" else "查看实时训练",
+                onClick = onStartWorkout,
+                action = PhoneAction.Primary,
+                modifier = Modifier.fillMaxWidth(),
+                icon = PhoneIcons.Play
+            )
         }
     }
 }

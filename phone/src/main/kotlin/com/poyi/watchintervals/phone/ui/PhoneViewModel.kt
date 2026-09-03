@@ -128,6 +128,20 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
             }
             connection.observe(connectionObserver)
             refreshPlans()
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    if (CloudSyncCredentials.readyForCloudV3(app)) {
+                        val updated = CloudSnapshotSync.syncPlans(app)
+                        if (updated) {
+                            withContext(Dispatchers.Main) { refreshPlans() }
+                            val conn = connection
+                            if (conn != null && conn.snapshot().primaryTransport != null) {
+                                PhoneSyncOutbox.drain(app, conn)
+                            }
+                        }
+                    }
+                } catch (ignored: Exception) {}
+            }
         }
     }
 
@@ -135,6 +149,16 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
 
     fun onResume() {
         if (_state.value.section == 1) startLivePolling()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (CloudSyncCredentials.readyForCloudV3(app)) {
+                    val updated = CloudSnapshotSync.syncPlans(app)
+                    if (updated) {
+                        withContext(Dispatchers.Main) { refreshPlans() }
+                    }
+                }
+            } catch (ignored: Exception) {}
+        }
     }
 
     fun onPause() {
@@ -182,6 +206,18 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
                     .apply()
 
                 setSync(true, PhoneSyncPolicy.progressLabel(0, 5, "准备同步"), Tone.Progress)
+                val cloudConfigured = CloudSyncCredentials.readyForCloudV3(app)
+                setSync(
+                    true,
+                    PhoneSyncPolicy.progressLabel(1, 5,
+                        if (cloudConfigured) "读取云端计划" else "云端未连接"),
+                    if (cloudConfigured) Tone.Progress else Tone.Caution
+                )
+                val cloudSynced = cloudConfigured && CloudSnapshotSync.sync(app)
+                if (cloudSynced) {
+                    withContext(Dispatchers.Main) { refreshPlans() }
+                }
+
                 val pairing = _state.value.setup.pairingCode.trim()
                 if (!connected.identity().isPaired() && pairing.length != 6) {
                     throw IllegalArgumentException("请输入手表上的 6 位配对码")
@@ -190,14 +226,15 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
                 connected.configureLan(_state.value.setup.lanHost.trim(), pairing)
                 // BLE 优先但不是必须:已验证的 LAN 可绕过失败的 BLE 连接,不阻塞整次同步。
                 try {
-                    connected.connect().get(25, TimeUnit.SECONDS)
+                    connected.connect().get(10, TimeUnit.SECONDS)
                 } catch (bleError: Exception) {
                     if (!connected.snapshot().lanAvailable) {
-                        throw IllegalStateException("蓝牙连接失败，且局域网不可达；请靠近手表或连接同一 Wi-Fi", bleError)
+                        setSync(false, if (cloudSynced) "云端已同步 · 手表离线" else "手表未连接", Tone.Neutral)
+                        return@launch
                     }
                 }
 
-                setSync(true, PhoneSyncPolicy.progressLabel(1, 5, "验证手表"), Tone.Progress)
+                setSync(true, PhoneSyncPolicy.progressLabel(2, 5, "验证手表"), Tone.Progress)
                 val status = JSONObject(connected.requestBlocking("GET", "/v1/status", "", 20_000L))
                 val expectedId = prefs.getString("watch_device_id", "") ?: ""
                 val actualId = status.optString("deviceId")
@@ -207,15 +244,6 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
                 if (expectedId.isEmpty() && actualId.isNotEmpty()) {
                     prefs.edit().putString("watch_device_id", actualId).apply()
                 }
-
-                val cloudConfigured = CloudSyncCredentials.readyForCloudV3(app)
-                setSync(
-                    true,
-                    PhoneSyncPolicy.progressLabel(2, 5,
-                        if (cloudConfigured) "读取云端计划" else "云端未连接"),
-                    if (cloudConfigured) Tone.Progress else Tone.Caution
-                )
-                val cloudSynced = cloudConfigured && CloudSnapshotSync.sync(app)
 
                 setSync(true, PhoneSyncPolicy.progressLabel(3, 5, "投影到手表"), Tone.Progress)
                 PhoneSyncOutbox.ensureCurrentLibrary(app)
