@@ -28,4 +28,9 @@ public final class CloudSnapshotSync {
     public static void syncSleepAsync(Context context) {
         CloudV3Sync.syncSleepAsync(context);
     }
+
+    /** Sends cached health summary records (steps, activity, heart-rate stats) to the cloud. */
+    public static void syncHealthAsync(Context context) {
+        CloudV3Sync.syncHealthAsync(context);
+    }
 }

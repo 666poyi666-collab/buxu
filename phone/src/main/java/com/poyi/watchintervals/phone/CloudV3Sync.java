@@ -114,6 +114,15 @@ final class CloudV3Sync {
         return sync(context, false, false, false, true);
     }
 
+    /**
+     * Health records are read+cached on the phone and carried in every full exchange body via
+     * {@link #healthRecordsFromCache}. This triggers such an exchange so the summary reaches the
+     * cloud authority (and thus ChatGPT) whenever it changes.
+     */
+    static void syncHealthAsync(Context context) {
+        requestAsync(context, true, true, false, false);
+    }
+
     private static void requestAsync(Context context, boolean fullSync, boolean liveStatus,
                                      boolean planOnly, boolean sleepOnly) {
         Context app = context.getApplicationContext();
@@ -897,13 +906,41 @@ final class CloudV3Sync {
                 : first(state.getJSONArray("commandResults"), MAX_ITEMS);
         JSONObject live = includeLiveStatus && !planOnly && !sleepOnly
                 ? readLiveStatus(context) : null;
+        JSONArray health = planOnly || sleepOnly ? new JSONArray() : healthRecordsFromCache(context);
         return new JSONObject().put("protocolVersion", 3)
                 .put("requestId", UUID.randomUUID().toString())
                 .put("deviceId", config.deviceId())
                 .put("cursor", state.opt("cursor") == null ? JSONObject.NULL : state.opt("cursor"))
                 .put("planChanges", plans).put("workoutFacts", workouts)
-                .put("sleepRecords", sleep).put("liveStatus", live == null ? JSONObject.NULL : live)
+                .put("sleepRecords", sleep).put("healthRecords", health)
+                .put("liveStatus", live == null ? JSONObject.NULL : live)
                 .put("commandResults", commandResults);
+    }
+
+    /** Builds the health summary records currently cached on the phone into sendable exchange items. */
+    private static JSONArray healthRecordsFromCache(Context context) throws Exception {
+        JSONArray items = new JSONArray();
+        JSONObject cache = PhoneHealthRepository.load(context);
+        JSONArray records = cache.optJSONArray("records");
+        if (records == null) return items;
+        for (int i = 0; i < records.length() && items.length() < MAX_ITEMS; i++) {
+            JSONObject block = records.optJSONObject(i);
+            if (block == null || !"ready".equals(block.optString("state"))) continue;
+            JSONArray recordItems = block.optJSONArray("items");
+            if (recordItems == null) continue;
+            for (int j = 0; j < recordItems.length() && items.length() < MAX_ITEMS; j++) {
+                JSONObject record = recordItems.optJSONObject(j);
+                if (record == null) continue;
+                String id = "health:" + block.optString("kind", "unknown") + ":"
+                        + record.optLong("timestamp", 0L);
+                String revision = sha256(canonical(record));
+                JSONObject payload = new JSONObject()
+                        .put("operationId", deterministicUuid(id + ":" + revision))
+                        .put("recordId", id).put("sourceRevision", revision).put("record", record);
+                items.put(payload);
+            }
+        }
+        return items;
     }
 
     static boolean isPlanOnlyRequest(JSONObject active) {

@@ -15,8 +15,9 @@ final class WatchCommandRouter implements AutoCloseable {
     private static final Object COMMAND_JOURNAL_LOCK = new Object();
     private final Context context;
     private final SystemSleepBridge sleep;
+    private final SystemHealthBridge health;
 
-    WatchCommandRouter(Context context){this.context=context.getApplicationContext();sleep=new SystemSleepBridge(this.context);}
+    WatchCommandRouter(Context context){this.context=context.getApplicationContext();sleep=new SystemSleepBridge(this.context);health=new SystemHealthBridge(this.context);}
 
     Result route(String method,String path,String body){
         try {
@@ -31,6 +32,7 @@ final class WatchCommandRouter implements AutoCloseable {
             if("PUT".equals(method)&&"/v1/plan/profile".equals(path)){JSONObject profile=new JSONObject(body);java.util.ArrayList<Stage> stages=PlanStore.decode(profile.optJSONArray("stages")==null?null:profile.optJSONArray("stages").toString());if(stages.isEmpty())return error(422,"invalid_plan");PlanStore.saveProfile(context,profile.optString("name","自定义计划"),profile.optString("group","我的计划"),profile.optString("requirement","按阶段顺序完成训练。"),stages);return ok(new JSONObject().put("saved",true).put("stageCount",stages.size()).toString());}
             if("GET".equals(method)&&"/v1/history".equals(path))return ok(HistoryStore.toJson(context).toString());
             if("GET".equals(method)&&("/v1/sleep".equals(path)||path.startsWith("/v1/sleep?")))return ok(sleep.read(queryDays(path),queryInt(path,"offsetDays",0,0,365)).toString());
+            if("GET".equals(method)&&("/v1/health".equals(path)||path.startsWith("/v1/health?")))return ok(health.read(queryDays(path)).toString());
             if("GET".equals(method)&&path.startsWith("/v1/history/")&&path.contains("/route")){String id=historyId(path,"/route");return ok(HistoryStore.routePage(context,id,queryInt(path,"cursor",0,0,Integer.MAX_VALUE),queryInt(path,"limit",500,1,1000)).toString());}
             if("GET".equals(method)&&path.startsWith("/v1/history/")&&path.contains("/heart")){String id=historyId(path,"/heart");return ok(HistoryStore.heartPage(context,id,queryInt(path,"cursor",0,0,Integer.MAX_VALUE),queryInt(path,"limit",500,1,1000)).toString());}
             if("GET".equals(method)&&path.startsWith("/v1/history/")){WorkoutRecord record=HistoryStore.find(context,path.substring("/v1/history/".length()));return record==null?error(404,"workout_not_found"):ok(record.toJson().toString());}
@@ -173,5 +175,5 @@ final class WatchCommandRouter implements AutoCloseable {
     private int queryDays(String path){int marker=path.indexOf("days=");if(marker<0)return 7;int end=path.indexOf('&',marker);try{return Math.max(1,Math.min(31,Integer.parseInt(path.substring(marker+5,end<0?path.length():end))));}catch(Exception ignored){return 7;}}
     private Result ok(String body){return new Result(200,body);}
     private Result error(int status,String code){try{return new Result(status,new JSONObject().put("error",code).toString());}catch(Exception ignored){return new Result(status,"{}");}}
-    @Override public void close(){sleep.close();}
+    @Override public void close(){sleep.close();health.close();}
 }

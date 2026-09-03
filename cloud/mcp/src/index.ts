@@ -31,11 +31,13 @@ import {
   cloudStatus,
   cloudWorkout,
   cloudWorkouts,
+  cloudHealthRecords,
   createCommand,
   getCommand,
   replaceCloudPlanLibrary,
   routeCloudV3,
   summarizeCloudSleep,
+  summarizeCloudHealth,
   summarizeCloudWorkouts,
   type CloudV3Env,
 } from './cloud-v3'
@@ -121,6 +123,8 @@ const TOOLS = [
   { name: 'watch_list_sleep_records', scope: WATCH_READ_SCOPE, description: 'Read sleep records with sessions, stages, score, SpO2, heart and breathing aggregates.', inputSchema: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 31 } }, additionalProperties: false } },
   { name: 'watch_get_latest_sleep', scope: WATCH_READ_SCOPE, description: 'Read the latest cloud sleep record.', inputSchema: EMPTY_SCHEMA },
   { name: 'watch_summarize_sleep', scope: WATCH_READ_SCOPE, description: 'Summarize the latest 31 cloud sleep records.', inputSchema: EMPTY_SCHEMA },
+  { name: 'watch_list_health_records', scope: WATCH_READ_SCOPE, description: 'Read manufacturer health summary records (steps, activity duration, heart-rate statistics).', inputSchema: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 120 } }, additionalProperties: false } },
+  { name: 'watch_summarize_health', scope: WATCH_READ_SCOPE, description: 'Summarize health records: per-kind counts, max steps/calories, average resting/heart-rate, maximum heart rate.', inputSchema: EMPTY_SCHEMA },
   { name: 'watch_upsert_plan_group', scope: WATCH_WRITE_SCOPE, description: 'Create or replace a plan group using expected plan-library revision.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, group: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, sortOrder: { type: 'integer', minimum: 0 } }, required: ['id', 'name', 'sortOrder'], additionalProperties: false } }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'group'], additionalProperties: false } },
   { name: 'watch_delete_plan_group', scope: WATCH_WRITE_SCOPE, description: 'Delete a plan group and all plans in it using expected plan-library revision. This is an explicit cascade delete; other groups and plans are preserved.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, groupId: ID_SCHEMA }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'groupId'], additionalProperties: false } },
   { name: 'watch_upsert_plan', scope: WATCH_WRITE_SCOPE, description: 'Create or replace one plan, including all ordered stages, using expected plan-library revision.', inputSchema: { ...PLAN_LIBRARY_ITEM_SCHEMA, properties: { ...PLAN_LIBRARY_ITEM_SCHEMA.properties, plan: PLAN_SCHEMA }, required: [...PLAN_LIBRARY_ITEM_SCHEMA.required, 'plan'], additionalProperties: false } },
@@ -189,6 +193,10 @@ function toolInputShape(name: ToolName): Record<string, z.ZodType> {
       return { workoutId: zId }
     case 'watch_list_sleep_records':
       return { limit: z.number().int().min(1).max(31).optional() }
+    case 'watch_list_health_records':
+      return { limit: z.number().int().min(1).max(120).optional() }
+    case 'watch_summarize_health':
+      return {};
     case 'watch_upsert_plan_group':
       return { ...writeMeta, group: zGroup }
     case 'watch_delete_plan_group':
@@ -278,6 +286,8 @@ class WatchMcpServer {
       return text({ record: Array.isArray(records.records) ? records.records[0] ?? null : null })
     }
     if (name === 'watch_summarize_sleep') return text(await summarizeCloudSleep(this.env.DB))
+    if (name === 'watch_list_health_records') return text(await cloudHealthRecords(this.env.DB, Number(args.limit ?? 31)))
+    if (name === 'watch_summarize_health') return text(await summarizeCloudHealth(this.env.DB))
 
     if (name.startsWith('watch_') && [
       'watch_upsert_plan_group', 'watch_delete_plan_group', 'watch_upsert_plan',

@@ -24,7 +24,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const ENTITY_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 const REQUEST_KEYS = new Set([
   'protocolVersion', 'requestId', 'deviceId', 'cursor', 'planChanges', 'workoutFacts',
-  'sleepRecords', 'liveStatus', 'commandResults',
+  'sleepRecords', 'healthRecords', 'liveStatus', 'commandResults',
 ])
 const PLAN_CHANGE_KEYS = new Set(['operationId', 'expectedRevision', 'library'])
 const LIBRARY_KEYS = new Set(['schemaVersion', 'selectedPlanId', 'groups', 'plans'])
@@ -65,6 +65,15 @@ const SESSION_KEYS = new Set([
   'lightDurationMinutes', 'remDurationMinutes', 'awakeDurationMinutes', 'stages',
 ])
 const SLEEP_STAGE_KEYS = new Set(['type', 'label', 'startTime', 'endTime'])
+const HEALTH_ITEM_KEYS = new Set(['operationId', 'recordId', 'sourceRevision', 'record'])
+// A health summary is a bounded, free-form manufacturer record (steps, activity, heart-rate stats).
+// It is allow-listed by key so no credential/telemetry-like field can ride through, but the value
+// set is kept deliberately small and the blob is otherwise opaque.
+const HEALTH_ALLOWED_KEYS = new Set([
+  'kind', 'timestamp', 'startTime', 'endTime', 'steps', 'calories', 'activeDurationMinutes',
+  'activityCount', 'exerciseDurationMinutes', 'restingHeartRateBpm', 'maxHeartRateBpm',
+  'averageHeartRateBpm', 'baselineHeartRateBpm', 'stressScore',
+])
 const LIVE_KEYS = new Set([
   'statusRevision', 'observedAt', 'expiresAt', 'connectionState', 'activeSession',
   'sessionState', 'planState', 'workout',
@@ -330,6 +339,22 @@ function validSleepRecord(value: unknown): value is JsonRecord {
     && Array.isArray(value.sessions) && value.sessions.length <= 50 && value.sessions.every(validSleepSession)
 }
 
+function validHealthRecord(value: unknown): value is JsonRecord {
+  // Health fields are optional per record type, so this is an allow-list (only) not an exact-key
+  // match: extra disallowed keys are rejected, but any subset of the allowed keys is fine.
+  if (!isRecord(value) || !only(value, HEALTH_ALLOWED_KEYS)) return false
+  if (!boundedString(value.kind, 40, false)) return false
+  for (const key of ['timestamp', 'startTime', 'endTime']) {
+    if (value[key] !== undefined && !safeInteger(value[key])) return false
+  }
+  for (const key of ['steps', 'calories', 'activeDurationMinutes', 'activityCount',
+    'exerciseDurationMinutes', 'restingHeartRateBpm', 'maxHeartRateBpm',
+    'averageHeartRateBpm', 'baselineHeartRateBpm', 'stressScore']) {
+    if (value[key] !== undefined && !finite(value[key])) return false
+  }
+  return !forbiddenField(value)
+}
+
 function validLiveWorkout(value: unknown): boolean {
   if (value === null) return true
   if (!isRecord(value) || !exact(value, LIVE_WORKOUT_KEYS)) return false
@@ -355,6 +380,7 @@ type ParsedExchange = {
   planChanges: JsonRecord[]
   workoutFacts: JsonRecord[]
   sleepRecords: JsonRecord[]
+  healthRecords: JsonRecord[]
   liveStatus: JsonRecord | null
   commandResults: JsonRecord[]
 }
@@ -364,7 +390,7 @@ function parseExchange(value: unknown): ParsedExchange | null {
     || !validUuid(value.requestId) || !validId(value.deviceId)) return null
   const cursor = decodeCursor(value.cursor)
   if (cursor === null) return null
-  const arrays = ['planChanges', 'workoutFacts', 'sleepRecords', 'commandResults'] as const
+  const arrays = ['planChanges', 'workoutFacts', 'sleepRecords', 'healthRecords', 'commandResults'] as const
   if (arrays.some((key) => !Array.isArray(value[key]) || (value[key] as unknown[]).length > MAX_ITEMS)) return null
   const planChanges = value.planChanges as unknown[]
   if (!planChanges.every((item) => isRecord(item) && exact(item, PLAN_CHANGE_KEYS)
@@ -376,13 +402,17 @@ function parseExchange(value: unknown): ParsedExchange | null {
   if (!sleepRecords.every((item) => isRecord(item) && exact(item, SLEEP_ITEM_KEYS)
     && validUuid(item.operationId) && validId(item.recordId)
     && boundedString(item.sourceRevision, 128, false) && validSleepRecord(item.record))) return null
+  const healthRecords = value.healthRecords as unknown[]
+  if (!healthRecords.every((item) => isRecord(item) && exact(item, HEALTH_ITEM_KEYS)
+    && validUuid(item.operationId) && validId(item.recordId)
+    && boundedString(item.sourceRevision, 128, false) && validHealthRecord(item.record))) return null
   const commandResults = value.commandResults as unknown[]
   if (!commandResults.every((item) => isRecord(item) && exact(item, COMMAND_RESULT_KEYS)
     && validUuid(item.commandId) && ['succeeded', 'failed'].includes(String(item.outcome))
     && boundedString(item.actualState, 100) && safeInteger(item.controlRevision)
     && safeInteger(item.completedAt) && (item.error === null || boundedString(item.error, 500)))) return null
   if (value.liveStatus !== null && !validLiveStatus(value.liveStatus)) return null
-  const operationIds = [value.requestId, ...planChanges, ...workoutFacts, ...sleepRecords]
+  const operationIds = [value.requestId, ...planChanges, ...workoutFacts, ...sleepRecords, ...healthRecords]
     .map((item) => typeof item === 'string' ? item : String((item as JsonRecord).operationId))
   if (new Set(operationIds).size !== operationIds.length || forbiddenField(value)) return null
   return {
@@ -392,6 +422,7 @@ function parseExchange(value: unknown): ParsedExchange | null {
     planChanges: planChanges as JsonRecord[],
     workoutFacts: workoutFacts as JsonRecord[],
     sleepRecords: sleepRecords as JsonRecord[],
+    healthRecords: healthRecords as JsonRecord[],
     liveStatus: value.liveStatus as JsonRecord | null,
     commandResults: commandResults as JsonRecord[],
   }
@@ -646,6 +677,43 @@ async function applySleepRecord(
   return result
 }
 
+async function applyHealthRecord(
+  env: CloudV3Env, deviceId: string, item: JsonRecord, timestamp: string,
+): Promise<JsonRecord> {
+  const requestHash = await sha256(stableJson(item))
+  const operationId = String(item.operationId)
+  const replay = await operationReplay(env, operationId, requestHash)
+  if (replay === 'reused') return { operationId, outcome: 'conflict', error: 'operation_id_reused' }
+  if (replay) return { ...replay, replayed: true }
+  const record = item.record as JsonRecord
+  const payloadHash = await sha256(stableJson(record))
+  const existing = await env.DB.prepare(
+    'SELECT source_revision, payload_hash FROM watch_v3_health_records WHERE owner_id = ? AND record_id = ?',
+  ).bind(OWNER_ID, item.recordId).first<{ source_revision: string; payload_hash: string }>()
+  let result: JsonRecord
+  if (existing && existing.source_revision === item.sourceRevision && existing.payload_hash === payloadHash) {
+    result = { operationId, outcome: 'acknowledged', recordId: item.recordId, replayed: true }
+  } else {
+    const kind = String(record.kind ?? 'health')
+    const timestampVal = record.timestamp !== undefined ? Number(record.timestamp) : 0
+    const start = record.startTime !== undefined ? Number(record.startTime) : timestampVal
+    const end = record.endTime !== undefined ? Number(record.endTime) : timestampVal
+    await env.DB.batch([
+      env.DB.prepare(
+        'INSERT INTO watch_v3_health_records '
+          + '(owner_id, record_id, source_revision, payload_hash, payload_json, kind, start_time, end_time, updated_at, origin_device_id) '
+          + 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(owner_id, record_id) DO UPDATE SET '
+          + 'source_revision = excluded.source_revision, payload_hash = excluded.payload_hash, '
+          + 'payload_json = excluded.payload_json, kind = excluded.kind, start_time = excluded.start_time, '
+          + 'end_time = excluded.end_time, updated_at = excluded.updated_at, origin_device_id = excluded.origin_device_id',
+      ).bind(OWNER_ID, item.recordId, item.sourceRevision, payloadHash, JSON.stringify(record), kind, String(start), String(end), timestamp, deviceId),
+    ])
+    result = { operationId, outcome: 'acknowledged', recordId: item.recordId, sourceRevision: item.sourceRevision }
+  }
+  await saveOperation(env, deviceId, operationId, 'health_record', requestHash, result, timestamp)
+  return result
+}
+
 async function applyLiveStatus(env: CloudV3Env, deviceId: string, status: JsonRecord, timestamp: string): Promise<void> {
   await env.DB.prepare(
     'INSERT INTO watch_v3_live_status '
@@ -805,6 +873,7 @@ async function handleExchange(request: Request, env: CloudV3Env): Promise<Respon
   for (const change of exchange.planChanges) acknowledgements.push(await applyPlanChange(env, device.device_id, change, timestamp))
   for (const fact of exchange.workoutFacts) acknowledgements.push(await applyWorkoutFact(env, device.device_id, fact, timestamp))
   for (const item of exchange.sleepRecords) acknowledgements.push(await applySleepRecord(env, device.device_id, item, timestamp))
+  for (const item of exchange.healthRecords) acknowledgements.push(await applyHealthRecord(env, device.device_id, item, timestamp))
   if (exchange.liveStatus) await applyLiveStatus(env, device.device_id, exchange.liveStatus, timestamp)
   await expireCommands(env.DB, timestamp)
   const commandAcknowledgements: JsonRecord[] = []
@@ -1083,5 +1152,53 @@ export async function summarizeCloudSleep(db: D1Database): Promise<JsonRecord> {
     emptyRecordCount: empty,
     totalDurationMinutes: total,
     averageScore: scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : null,
+  }
+}
+
+export async function cloudHealthRecords(db: D1Database, limit = 31): Promise<JsonRecord> {
+  const rows = await db.prepare(
+    'SELECT record_id, source_revision, payload_json, kind, updated_at FROM watch_v3_health_records '
+      + 'WHERE owner_id = ? ORDER BY end_time DESC LIMIT ?',
+  ).bind(OWNER_ID, Math.max(1, Math.min(120, limit))).all<{
+    record_id: string; source_revision: string; payload_json: string; kind: string; updated_at: string
+  }>()
+  return { records: rows.results.map((row) => ({
+    recordId: row.record_id, sourceRevision: row.source_revision,
+    kind: row.kind, record: JSON.parse(row.payload_json), updatedAt: row.updated_at,
+  })) }
+}
+
+export async function summarizeCloudHealth(db: D1Database): Promise<JsonRecord> {
+  const result = await cloudHealthRecords(db, 120) as { records: Array<{ record: JsonRecord }> }
+  const byKind: Record<string, number> = {}
+  let maxSteps = 0
+  let maxCalories = 0
+  let latest = 0
+  const resting: number[] = []
+  const avg: number[] = []
+  const max: number[] = []
+  for (const item of result.records) {
+    const key = String(item.record.kind ?? 'health')
+    byKind[key] = (byKind[key] ?? 0) + 1
+    const ts = Number(item.record.timestamp ?? 0)
+    if (ts > latest) latest = ts
+    if (Number.isFinite(Number(item.record.steps))) maxSteps = Math.max(maxSteps, Number(item.record.steps))
+    if (Number.isFinite(Number(item.record.calories))) maxCalories = Math.max(maxCalories, Number(item.record.calories))
+    if (Number.isFinite(Number(item.record.restingHeartRateBpm))) resting.push(Number(item.record.restingHeartRateBpm))
+    if (Number.isFinite(Number(item.record.averageHeartRateBpm))) avg.push(Number(item.record.averageHeartRateBpm))
+    if (Number.isFinite(Number(item.record.maxHeartRateBpm))) max.push(Number(item.record.maxHeartRateBpm))
+  }
+  const average = (values: number[]) => values.length
+    ? values.reduce((sum, value) => sum + value, 0) / values.length : null
+  return {
+    recordCount: result.records.length,
+    kindBreakdown: byKind,
+    everydayAverageSteps: byKind.daily_activity ? maxSteps : null,
+    maxSteps,
+    maxCalories,
+    averageRestingHeartRateBpm: average(resting),
+    averageHeartRateBpm: average(avg),
+    maximumHeartRateBpm: average(max),
+    latestTimestamp: latest || null,
   }
 }

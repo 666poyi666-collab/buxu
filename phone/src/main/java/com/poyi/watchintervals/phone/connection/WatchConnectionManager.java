@@ -28,6 +28,7 @@ public final class WatchConnectionManager {
     private final java.util.concurrent.atomic.AtomicBoolean lanVerifyInFlight=new java.util.concurrent.atomic.AtomicBoolean();
 
     private WatchConnectionManager(Context context){this.context=context;identity=new WatchIdentityStore(context);ble=new BleGattTransport(context,identity);ble.subscribe(event->{if(WatchCloudBridgeEvent.isHistoryChanged(event))main.post(()->EncryptedWatchSyncWorker.schedule(this.context));});ble.setStateListener((next,cause)->{ConnectionState previous=state;setState(next,cause);if(next==ConnectionState.DISCONNECTED&&!"requested".equals(cause)&&(previous==ConnectionState.CONNECTED_BLE||previous==ConnectionState.CONNECTED_BLE_LAN||previous==ConnectionState.SYNCING))scheduleReconnect();});restoreLan();}
+    public Context context(){return context;}
     public WatchIdentityStore identity(){return identity;}
     public void configurePairing(String pairingCode){if(!identity.isPaired()&&pairingCode!=null&&!pairingCode.trim().isEmpty())identity.setPairingCode(pairingCode.trim());}
     public void configureLan(String host,String pairingCode){String credential=identity.lanCredential();String previous=lan.host();lan.configure(host,credential.isEmpty()?pairingCode:credential);if(!lan.isAvailable())return;if(!lan.host().equals(previous))context.getSharedPreferences("connection",Context.MODE_PRIVATE).edit().putString("host",lan.host()).apply();if(!lanVerified||!lan.host().equals(previous))verifyLan();}

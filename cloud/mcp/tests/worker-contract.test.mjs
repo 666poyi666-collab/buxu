@@ -645,6 +645,7 @@ function v3Envelope(deviceId, overrides = {}) {
     planChanges: [],
     workoutFacts: [],
     sleepRecords: [],
+    healthRecords: [],
     liveStatus: null,
     commandResults: [],
     ...overrides,
@@ -1265,12 +1266,18 @@ test('Watch Worker + D1 canonical sync, auth, metadata and retirement contract',
           sleepRecords: [{
             operationId: uuid(3202), recordId: 'sleep-cloud', sourceRevision: 'source-1', record: sleep,
           }],
+          healthRecords: [{
+            operationId: uuid(3207), recordId: 'health-daily-1', sourceRevision: 'source-1', record: {
+              kind: 'daily_activity', timestamp: 1_788_000_000_000, steps: 8_000,
+              calories: 320, activeDurationMinutes: 45, activityCount: 12,
+            },
+          }],
           liveStatus: v3LiveStatus(2),
         }),
       })
       assert.equal(uploaded.response.status, 200, uploaded.raw)
       assert.deepEqual(uploaded.payload.acknowledgements.map((item) => item.outcome),
-        ['acknowledged', 'acknowledged'])
+        ['acknowledged', 'acknowledged', 'acknowledged'])
       v3Cursor = uploaded.payload.nextCursor
 
       const duplicateFact = await requestJson(worker.baseUrl, '/sync/v3/exchange', {
@@ -1310,6 +1317,17 @@ test('Watch Worker + D1 canonical sync, auth, metadata and retirement contract',
       ))
       assert.equal(sleepRecords.records[0].record.sleepScore, 87)
       assert.equal(sleepRecords.records[0].record.sessions[0].stages[0].type, 2)
+      const healthRecords = mcpToolPayload(await callMcpTool(
+        worker.baseUrl, readToken, 'watch_list_health_records', { limit: 120 },
+      ))
+      assert.equal(healthRecords.records[0].kind, 'daily_activity')
+      assert.equal(healthRecords.records[0].record.steps, 8000)
+      assert.equal(healthRecords.records[0].record.calories, 320)
+      const healthSummary = mcpToolPayload(await callMcpTool(
+        worker.baseUrl, readToken, 'watch_summarize_health',
+      ))
+      assert.equal(healthSummary.recordCount, 1)
+      assert.equal(healthSummary.maxSteps, 8000)
       const status = mcpToolPayload(await callMcpTool(worker.baseUrl, readToken, 'watch_get_status'))
       assert.equal(status.supportsPcOff, false)
       assert.equal(status.status.workout.heartRate, 145)

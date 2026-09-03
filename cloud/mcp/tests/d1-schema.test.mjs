@@ -80,7 +80,7 @@ test('fresh schema exposes only the Worker canonical storage model', () => {
     'watch_entities', 'watch_read_projection', 'watch_read_projection_state',
     'watch_v3_authority_checkpoints', 'watch_v3_authority_observations',
     'watch_v3_changes', 'watch_v3_command_audit', 'watch_v3_commands',
-    'watch_v3_device_state', 'watch_v3_live_status', 'watch_v3_operations',
+    'watch_v3_device_state', 'watch_v3_health_records', 'watch_v3_live_status', 'watch_v3_operations',
     'watch_v3_plan_groups', 'watch_v3_plan_libraries', 'watch_v3_plans',
     'watch_v3_sleep_records', 'watch_v3_workout_tombstones', 'watch_v3_workouts',
   ])

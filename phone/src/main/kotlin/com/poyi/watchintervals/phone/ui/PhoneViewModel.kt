@@ -10,6 +10,7 @@ import com.poyi.watchintervals.phone.CloudSnapshotSync
 import com.poyi.watchintervals.phone.CloudSyncCredentials
 import com.poyi.watchintervals.phone.PhoneCloudSetupSpec
 import com.poyi.watchintervals.phone.PhoneFormat
+import com.poyi.watchintervals.phone.PhoneHealthSync
 import com.poyi.watchintervals.phone.PhonePlanLibrary
 import com.poyi.watchintervals.phone.PhonePlanUiModel
 import com.poyi.watchintervals.phone.PhoneSleepOverview
@@ -235,6 +236,17 @@ class PhoneViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 } catch (sleepError: Exception) {
                     android.util.Log.w("PhoneViewModel", "Sleep refresh did not block the main sync", sleepError)
+                }
+                // Pull the manufacturer health summary (steps, activity, heart-rate stats) and cache
+                // it. It is uploaded to the cloud so ChatGPT can query the same real system data the
+                // watch exposes. A read failure never cancels the rest of the sync.
+                try {
+                    val health = PhoneHealthSync.fetchRecent(connected, 31)
+                    if ("ready" == health.optString("state")) {
+                        CloudSnapshotSync.syncHealthAsync(app)
+                    }
+                } catch (healthError: Exception) {
+                    android.util.Log.w("PhoneViewModel", "Health refresh did not block the main sync", healthError)
                 }
 
                 val completedAt = System.currentTimeMillis()

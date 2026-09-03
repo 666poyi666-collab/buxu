@@ -203,3 +203,13 @@
   - `connect()` 优先用缓存地址直接 `getRemoteDevice(address)+connectGatt`（跳过扫描）；令 `cachedAttemptDirty` 标志控制：缓存直连失败时下一次回退到真实扫描，避免用陈旧地址无限重试。
 - 边界：缓存地址仅当手表端广播/前台服务在运行时有效；若手表 App 被杀，仍需先打开手表 App 让两个前台服务运行，手机才能连上。手机端无法在手表端无服务时伪造“已连接”。
 - 验证：Phone JVM/lint/assemble 通过；APK SHA-256 `DD8C7F7F…` 已覆盖安装到手机，未做功能点击。真实连接需手机+手表同开，最终以实机为准。
+
+## 2026-09-03（ChatGPT 云端实测验收反馈处理）
+
+- 用户按 Watch Cloud MCP 云端验收跑通核心读写闭环（读状态/训练/睡眠、建组、建计划、覆盖修改、删除、最终清理为空均成功），并指出 3 处需关注。
+- 逐项核实：
+  - **`watch_replace_plan_stages` 用户枚举不到**：源码 `cloud/mcp/src/index.ts`（TOOLS 列表 + `inputSchema` case + `execute` 分支）均已有，且部署 Worker 与 `workers.dev`/custom domain 均为同一 buildCommit `44541e93` 含该工具；实测找不到是 **MCP 客户端工具列表缓存旧版本**。刷新/重选 MCP Server 后应出现，无需改代码。
+  - **`freshness=stale`**：`cloudStatus` 依据 `watch_v3_live_status.expires_at` 判断；当 `sessionState = STOPPED`（无进行中锻炼、无实时心跳）且 live status TTL 过期时标志 `stale`，属正常，非 bug；活动会话期间会显示 `fresh`。
+  - **`watch_upsert_plan` 的 `groupId`/`sortOrder` 强制必填**：`PLAN_SCHEMA` 要求 `groupId`（string|null）+ `sortOrder`（int），因计划属于分组；测试说明未先 `watch_upsert_plan_group` 创建分组或传 `groupId:null,sortOrder:0`，故首次调用报校验错。属正确设计，非缺陷。
+- 改进（用户建议）：`summarizeCloudSleep` 原把“0分0分钟”的空占位记录也计入睡眠平均分与总时长，拉低 `averageScore`。已改为仅统计“有 session 或总时长>0”的真实睡眠夜，新增 `nightsWithData`、`emptyRecordCount` 字段，`averageScore` 不再被空记录拉低。
+- 验证：Cloud typecheck + 40 项测试通过；部署 `buildCommit=6e590d58…`，`workers.dev`/custom domain 均已上线。
