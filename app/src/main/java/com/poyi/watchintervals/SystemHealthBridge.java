@@ -96,8 +96,65 @@ final class SystemHealthBridge {
                     "HeartRateProto$HeartRateStatsRecords", days, startSeconds, endSeconds));
             result.accumulate("records", readBlock("heart_rate", "HeartRateRecord",
                     "HeartRateProto$HeartRateRecords", days, startSeconds, endSeconds));
+            // Probe: enumerate which other record types the firmware store recognizes, so
+            // max/avg heart-rate (sport records) and stress are not missed behind unprobed types.
+            result.put("probe", probeTypes(startSeconds, endSeconds));
         } catch (Exception ignored) {}
         return result;
+    }
+
+    /** Asks the store whether each candidate record type is readable, without parsing payloads. */
+    private JSONObject probeTypes(long start, long end) {
+        String[] candidates = {
+            "SportRecord", "RunSportRecord", "SportSessionRecord", "ExerciseRecord",
+            "DailySportRecord", "StepsRecord", "StepRecord", "HeartRateDetailRecord",
+            "HeartRateVariabilityRecord", "BloodOxygenRecord", "StressRecord",
+            "WeightRecord", "BodyCompositionRecord", "DistanceRecord",
+            "SleepStageRecord", "RunRecord", "OutdoorRunRecord",
+        };
+        JSONObject out = new JSONObject();
+        try {
+            IBinder binder = awaitStore();
+            ClassLoader loader = loader();
+            for (String type : candidates) {
+                try {
+                    byte[] request = buildReadRequest(loader, type, start, end);
+                    ReadCallback callback = new ReadCallback(loader);
+                    Parcel data = Parcel.obtain();
+                    Parcel reply = Parcel.obtain();
+                    try {
+                        data.writeInterfaceToken(STORE_DESCRIPTOR);
+                        data.writeInt(1);
+                        data.writeByteArray(request);
+                        data.writeStrongBinder(callback);
+                        binder.transact(TRANSACTION_READ_RECORDS, data, reply, 0);
+                        reply.readException();
+                    } finally {
+                        reply.recycle();
+                        data.recycle();
+                    }
+                    if (!callback.done.await(3, TimeUnit.SECONDS)) {
+                        out.put(type, "timeout");
+                        continue;
+                    }
+                    if (callback.error != null) {
+                        out.put(type, "error:" + callback.error);
+                        continue;
+                    }
+                    out.put(type, callback.responseBytes == null
+                            ? "ready:null" : "ready:" + callback.responseBytes.length + "bytes");
+                } catch (Throwable error) {
+                    safePut(out, type, "fail:" + rootMessage(error));
+                }
+            }
+        } catch (Throwable error) {
+            safePut(out, "_store", rootMessage(error));
+        }
+        return out;
+    }
+
+    private static void safePut(JSONObject out, String key, String value) {
+        try { out.put(key, value); } catch (Exception ignored) {}
     }
 
     private JSONObject readBlock(String kind, String recordType, String parserClass,
