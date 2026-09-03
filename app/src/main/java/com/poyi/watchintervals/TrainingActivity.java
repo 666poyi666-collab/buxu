@@ -730,10 +730,15 @@ public class TrainingActivity extends WatchActivity {
     }
 
     private String stageProgressText(WorkoutService.Snapshot s) {
+        String paceText = formatCurrentPace(s);
+        String pacePart = "--".equals(paceText) ? "" : "  ·  配速 " + paceText;
         if (s.unit == Stage.Unit.DISTANCE) {
-            return String.format(Locale.CHINA, "本阶段 %d / %s%s", Math.round(s.stageProgressValue), stageTargetText(s), s.usingStepDistance ? " · 步数估距" : "");
+            return String.format(Locale.CHINA, "本阶段 %d / %s%s%s",
+                    Math.round(s.stageProgressValue), stageTargetText(s),
+                    s.usingStepDistance ? " · 步数估距" : "",
+                    pacePart);
         }
-        return "本阶段 " + Format.duration((long)s.stageProgressValue) + " / " + stageTargetText(s);
+        return "本阶段 " + Format.duration((long)s.stageProgressValue) + " / " + stageTargetText(s) + pacePart;
     }
 
     private String compactRemainingText(WorkoutService.Snapshot s) {

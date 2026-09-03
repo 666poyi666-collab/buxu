@@ -1358,7 +1358,8 @@ public class WorkoutService extends Service implements LocationListener, SensorE
             }
             float metersPerSecond = delta * 1000f / dt;
             float reportedSpeed = location.hasSpeed() ? location.getSpeed() : -1f;
-            float minDelta = Math.max(1.5f, Math.min(6f, Math.max(lastLocation.getAccuracy(), location.getAccuracy()) * 0.12f));
+            boolean movingBySpeed = reportedSpeed >= MIN_MOVING_SPEED_MPS;
+            float minDelta = movingBySpeed ? 0.8f : Math.max(1.5f, Math.min(6f, Math.max(lastLocation.getAccuracy(), location.getAccuracy()) * 0.12f));
             if (delta < minDelta) {
                 saveSession(false);
                 return;

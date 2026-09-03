@@ -15,13 +15,15 @@ final class SpeedFusion {
     /** Doppler samples older than this no longer describe the current effort. */
     static final long GNSS_FRESH_MILLIS = 3_000L;
     /** OWW221 reports ~0.3-0.9 m/s accuracy with a fix; anything worse is chip noise, not running. */
-    static final double MAX_GNSS_SPEED_ACCURACY_MPS = 1.6d;
+    static final double MAX_GNSS_SPEED_ACCURACY_MPS = 2.5d;
     /** Above this a "run" is a vehicle or a GNSS glitch. */
     static final double MAX_PLAUSIBLE_SPEED_MPS = 12.5d;
     /** Below this the wearer is standing; showing 0.4 km/h reads as a broken instrument. */
     static final double MOVING_THRESHOLD_MPS = 0.5d;
     /** Exponential smoothing constant. ~4 s feels responsive without visible flicker. */
-    static final long SMOOTHING_TAU_MILLIS = 4_000L;
+    static final long SMOOTHING_TAU_MILLIS = 3_500L;
+    /** Hold smoothed speed across short dropouts (<= 2.5s) to avoid instant NaN collapse. */
+    static final long DROPOUT_HOLD_MILLIS = 2_500L;
 
     enum Source { GNSS_DOPPLER, DISTANCE_WINDOW, NONE }
 
@@ -70,6 +72,9 @@ final class SpeedFusion {
     double speedMps(long now) {
         double raw = rawSpeed(now);
         if (Double.isNaN(raw)) {
+            if (seeded && now - smoothedAt <= DROPOUT_HOLD_MILLIS) {
+                return smoothed < MOVING_THRESHOLD_MPS ? 0d : smoothed;
+            }
             smoothed = Double.NaN;
             smoothedAt = now;
             seeded = false;
