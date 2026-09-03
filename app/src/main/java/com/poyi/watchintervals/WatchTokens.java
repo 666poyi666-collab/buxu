@@ -60,7 +60,7 @@ final class WatchTokens {
     static final float FIGURE_LABEL = 14f;
     /** 阶段倒计时页三列实时指标的放大尺寸（抬腕一眼看清）。 */
     static final float STAGE_METRIC_FIGURE = 18f;
-    static final float STAGE_METRIC_ROW = 44f;
+    static final float STAGE_METRIC_ROW = 36f;
     static final float STAGE_METRIC_GAP = 2f;
 
     // ---- 间距与形状 -------------------------------------------------------

@@ -164,7 +164,7 @@ public class TrainingActivity extends WatchActivity {
     private LinearLayout buildDataPage() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 4), Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 2));
+        root.setPadding(Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 2), Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 2));
         root.setBackgroundColor(Ui.BLACK);
 
         LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
@@ -172,24 +172,32 @@ public class TrainingActivity extends WatchActivity {
         top.addView(section, new LinearLayout.LayoutParams(0, -1, 1));
         stageCounter = Ui.chip(this, "第 1/2 项", Ui.LIME, Ui.TINT_LIME);
         top.addView(stageCounter, new LinearLayout.LayoutParams(Ui.dp(this, 84), Ui.dp(this, 22)));
-        root.addView(top, new LinearLayout.LayoutParams(-1, Ui.dp(this, 24)));
-
-        stageName = Ui.bold(this, "准备", 21, Ui.LIME); stageName.setGravity(Gravity.CENTER);
-        root.addView(stageName, new LinearLayout.LayoutParams(-1, Ui.dp(this, 28)));
+        root.addView(top, new LinearLayout.LayoutParams(-1, Ui.dp(this, 22)));
 
         FrameLayout ringBox = new FrameLayout(this);
         ring = new Ui.Ring(this);
-        FrameLayout.LayoutParams ringParams = new FrameLayout.LayoutParams(Ui.dp(this, 116), Ui.dp(this, 116), Gravity.CENTER);
+        FrameLayout.LayoutParams ringParams = new FrameLayout.LayoutParams(Ui.dp(this, 176), Ui.dp(this, 176), Gravity.CENTER);
         ringBox.addView(ring, ringParams);
+
         LinearLayout center = new LinearLayout(this);
         center.setOrientation(LinearLayout.VERTICAL);
         center.setGravity(Gravity.CENTER);
-        remainingLabel = Ui.bold(this, "剩余距离", 11, Ui.MUTED); remainingLabel.setGravity(Gravity.CENTER);
-        center.addView(remainingLabel, new LinearLayout.LayoutParams(-2, -2));
-        remaining = Ui.numeral(this, "--", 34, Ui.WHITE); remaining.setGravity(Gravity.CENTER);
+
+        stageName = Ui.bold(this, "准备", 22, Ui.LIME);
+        stageName.setGravity(Gravity.CENTER);
+        stageName.setSingleLine(true);
+        center.addView(stageName, new LinearLayout.LayoutParams(-2, -2));
+
+        remaining = Ui.numeral(this, "--", 52, Ui.WHITE);
+        remaining.setGravity(Gravity.CENTER);
         center.addView(remaining, new LinearLayout.LayoutParams(-2, -2));
+
+        remainingLabel = Ui.bold(this, "剩余距离", 12, Ui.MUTED);
+        remainingLabel.setGravity(Gravity.CENTER);
+        center.addView(remainingLabel, new LinearLayout.LayoutParams(-2, -2));
+
         ringBox.addView(center, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
-        root.addView(ringBox, new LinearLayout.LayoutParams(-1, Ui.dp(this, 118)));
+        root.addView(ringBox, new LinearLayout.LayoutParams(-1, Ui.dp(this, 178)));
 
         LinearLayout stageMetrics = new LinearLayout(this);
         stageMetrics.setGravity(Gravity.CENTER_VERTICAL);
@@ -201,10 +209,11 @@ public class TrainingActivity extends WatchActivity {
         metricsParams.bottomMargin = Ui.dp(this, Ui.STAGE_METRIC_GAP);
         root.addView(stageMetrics, metricsParams);
 
-        stageProgress = Ui.text(this, "本阶段 --", Ui.LABEL, Ui.MUTED); stageProgress.setGravity(Gravity.CENTER);
-        root.addView(stageProgress, new LinearLayout.LayoutParams(-1, Ui.dp(this, 20)));
+        stageProgress = Ui.text(this, "", Ui.LABEL, Ui.MUTED);
+        stageProgress.setVisibility(View.GONE);
+        root.addView(stageProgress, new LinearLayout.LayoutParams(0, 0));
 
-        root.addView(Ui.pagerDots(this, STAGE_PAGE, 5), new LinearLayout.LayoutParams(-1, Ui.dp(this, 10)));
+        root.addView(Ui.pagerDots(this, STAGE_PAGE, 5), new LinearLayout.LayoutParams(-1, Ui.dp(this, 8)));
         return root;
     }
 
