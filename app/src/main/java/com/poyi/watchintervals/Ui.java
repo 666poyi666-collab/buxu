@@ -862,11 +862,15 @@ final class Ui {
         private final android.graphics.Paint track = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
         private final android.graphics.Paint arc = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
         private final android.graphics.RectF bounds = new android.graphics.RectF();
+        private final android.graphics.Path fullPath = new android.graphics.Path();
+        private final android.graphics.Path progressPath = new android.graphics.Path();
+        private final android.graphics.PathMeasure measure = new android.graphics.PathMeasure();
         private float fraction;
+        private float cornerRadius;
 
         Ring(Context context) {
             super(context);
-            float stroke = dp(context, 7.5f);
+            float stroke = dp(context, 6f);
             track.setStyle(android.graphics.Paint.Style.STROKE);
             track.setStrokeWidth(stroke);
             track.setColor(LINE);
@@ -874,6 +878,7 @@ final class Ui {
             arc.setStrokeWidth(stroke);
             arc.setStrokeCap(android.graphics.Paint.Cap.ROUND);
             arc.setColor(LIME);
+            cornerRadius = dp(context, 20f);
         }
 
         void set(float value, int color) {
@@ -884,11 +889,39 @@ final class Ui {
             invalidate();
         }
 
-        @Override protected void onDraw(android.graphics.Canvas canvas) {
-            float inset = track.getStrokeWidth() / 2f + dp(getContext(), 1);
-            bounds.set(inset, inset, getWidth() - inset, getHeight() - inset);
-            canvas.drawArc(bounds, 0f, 360f, false, track);
-            if (fraction > 0f) canvas.drawArc(bounds, -90f, fraction * 360f, false, arc);
+        @Override
+        protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+            super.onSizeChanged(w, h, oldw, oldh);
+            float stroke = track.getStrokeWidth();
+            float inset = stroke / 2f + dp(getContext(), 1);
+            bounds.set(inset, inset, w - inset, h - inset);
+            fullPath.reset();
+            float cx = bounds.centerX();
+            float r = Math.min(cornerRadius, Math.min(bounds.width(), bounds.height()) / 2f);
+            fullPath.moveTo(cx, bounds.top);
+            fullPath.lineTo(bounds.right - r, bounds.top);
+            fullPath.arcTo(bounds.right - 2 * r, bounds.top, bounds.right, bounds.top + 2 * r, -90f, 90f, false);
+            fullPath.lineTo(bounds.right, bounds.bottom - r);
+            fullPath.arcTo(bounds.right - 2 * r, bounds.bottom - 2 * r, bounds.right, bounds.bottom, 0f, 90f, false);
+            fullPath.lineTo(bounds.left + r, bounds.bottom);
+            fullPath.arcTo(bounds.left, bounds.bottom - 2 * r, bounds.left + 2 * r, bounds.bottom, 90f, 90f, false);
+            fullPath.lineTo(bounds.left, bounds.top + r);
+            fullPath.arcTo(bounds.left, bounds.top, bounds.left + 2 * r, bounds.top + 2 * r, 180f, 90f, false);
+            fullPath.lineTo(cx, bounds.top);
+            fullPath.close();
+            measure.setPath(fullPath, false);
+        }
+
+        @Override
+        protected void onDraw(android.graphics.Canvas canvas) {
+            super.onDraw(canvas);
+            canvas.drawPath(fullPath, track);
+            if (fraction > 0f) {
+                progressPath.reset();
+                float total = measure.getLength();
+                measure.getSegment(0f, total * fraction, progressPath, true);
+                canvas.drawPath(progressPath, arc);
+            }
         }
     }
 

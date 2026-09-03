@@ -46,7 +46,7 @@ public class TrainingActivity extends WatchActivity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private TextView stageName, remaining, remainingLabel, stageProgress, stageCounter, gps, distance, pace, heart, steps, duration, pause, stop;
     /** 间歇倒计时页的并排指标:这一屏原本只有倒计时,关键数据必须留在同一视野内。 */
-    private TextView stageHeart, stageDistance, stageCalories;
+    private TextView stageHeart, stagePace, stageDistance, stageCalories;
     private TextView stopCancel;
     private TextView coreHeader, coreRemaining, speed, controlState, controlDuration, controlSummary;
     private TextView trainClock, extraClock;
@@ -164,7 +164,7 @@ public class TrainingActivity extends WatchActivity {
     private LinearLayout buildDataPage() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 2), Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 2));
+        root.setPadding(Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 4), Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 2));
         root.setBackgroundColor(Ui.BLACK);
 
         LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
@@ -174,40 +174,50 @@ public class TrainingActivity extends WatchActivity {
         top.addView(stageCounter, new LinearLayout.LayoutParams(Ui.dp(this, 84), Ui.dp(this, 22)));
         root.addView(top, new LinearLayout.LayoutParams(-1, Ui.dp(this, 22)));
 
-        FrameLayout ringBox = new FrameLayout(this);
+        FrameLayout stadiumBox = new FrameLayout(this);
         ring = new Ui.Ring(this);
-        FrameLayout.LayoutParams ringParams = new FrameLayout.LayoutParams(Ui.dp(this, 176), Ui.dp(this, 176), Gravity.CENTER);
-        ringBox.addView(ring, ringParams);
+        stadiumBox.addView(ring, new FrameLayout.LayoutParams(-1, -1));
 
         LinearLayout center = new LinearLayout(this);
         center.setOrientation(LinearLayout.VERTICAL);
         center.setGravity(Gravity.CENTER);
 
-        stageName = Ui.bold(this, "准备", 22, Ui.LIME);
+        stageName = Ui.bold(this, "准备", 21, Ui.LIME);
         stageName.setGravity(Gravity.CENTER);
         stageName.setSingleLine(true);
         center.addView(stageName, new LinearLayout.LayoutParams(-2, -2));
 
-        remaining = Ui.numeral(this, "--", 52, Ui.WHITE);
+        remaining = Ui.numeral(this, "--", 44, Ui.WHITE);
         remaining.setGravity(Gravity.CENTER);
         center.addView(remaining, new LinearLayout.LayoutParams(-2, -2));
 
-        remainingLabel = Ui.bold(this, "剩余距离", 12, Ui.MUTED);
+        remainingLabel = Ui.bold(this, "剩余距离", 10, Ui.MUTED);
         remainingLabel.setGravity(Gravity.CENTER);
         center.addView(remainingLabel, new LinearLayout.LayoutParams(-2, -2));
 
-        ringBox.addView(center, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
-        root.addView(ringBox, new LinearLayout.LayoutParams(-1, Ui.dp(this, 178)));
+        stadiumBox.addView(center, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        root.addView(stadiumBox, new LinearLayout.LayoutParams(-1, Ui.dp(this, 122)));
 
-        LinearLayout stageMetrics = new LinearLayout(this);
-        stageMetrics.setGravity(Gravity.CENTER_VERTICAL);
-        stageHeart = Ui.metricCell(this, stageMetrics, "心率", "--", "次/分", Ui.RED, Ui.STAGE_METRIC_FIGURE);
-        stageDistance = Ui.metricCell(this, stageMetrics, "累计距离", "0.00", "公里", Ui.LIME, Ui.STAGE_METRIC_FIGURE);
-        stageCalories = Ui.metricCell(this, stageMetrics, "估算热量", "0", "千卡", Ui.AMBER, Ui.STAGE_METRIC_FIGURE);
-        LinearLayout.LayoutParams metricsParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.STAGE_METRIC_ROW));
-        metricsParams.topMargin = Ui.dp(this, Ui.STAGE_METRIC_GAP);
-        metricsParams.bottomMargin = Ui.dp(this, Ui.STAGE_METRIC_GAP);
-        root.addView(stageMetrics, metricsParams);
+        LinearLayout deck = new LinearLayout(this);
+        deck.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setGravity(Gravity.CENTER_VERTICAL);
+        stageHeart = Ui.metricCell(this, row1, "当前心率", "--", "次/分", Ui.RED, Ui.STAGE_METRIC_FIGURE);
+        stagePace = Ui.metricCell(this, row1, "当前配速", "--", "/公里", Ui.CYAN, Ui.STAGE_METRIC_FIGURE);
+        deck.addView(row1, new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.STAGE_METRIC_ROW)));
+
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setGravity(Gravity.CENTER_VERTICAL);
+        stageDistance = Ui.metricCell(this, row2, "累计距离", "0.00", "公里", Ui.LIME, Ui.STAGE_METRIC_FIGURE);
+        stageCalories = Ui.metricCell(this, row2, "估算热量", "0", "千卡", Ui.AMBER, Ui.STAGE_METRIC_FIGURE);
+        LinearLayout.LayoutParams row2Params = new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.STAGE_METRIC_ROW));
+        row2Params.topMargin = Ui.dp(this, Ui.STAGE_METRIC_GAP);
+        deck.addView(row2, row2Params);
+
+        LinearLayout.LayoutParams deckParams = new LinearLayout.LayoutParams(-1, -2);
+        deckParams.topMargin = Ui.dp(this, 6);
+        root.addView(deck, deckParams);
 
         stageProgress = Ui.text(this, "", Ui.LABEL, Ui.MUTED);
         stageProgress.setVisibility(View.GONE);
@@ -538,6 +548,8 @@ public class TrainingActivity extends WatchActivity {
         int accent = s.planCompleted ? Ui.CYAN : s.paused ? Ui.MUTED : s.waitingForGps ? Ui.AMBER
                 : s.stageKind == Stage.Kind.WALK ? Ui.CYAN
                 : s.stageKind == Stage.Kind.REST ? Ui.AMBER : Ui.LIME;
+        boolean paceLive = Double.isFinite(s.currentSpeedMps)
+                && s.currentSpeedMps >= SpeedFusion.MOVING_THRESHOLD_MPS;
         if (visiblePage == STAGE_PAGE) {
             Ui.setTextIfChanged(stageName, s.planCompleted
                     ? (s.paused ? "自由记录 · 已暂停" : "自由记录")
@@ -579,14 +591,16 @@ public class TrainingActivity extends WatchActivity {
             }
             Ui.setTextIfChanged(stageHeart, s.heartRate > 0 ? String.valueOf(s.heartRate) : "--");
             Ui.setTextColorIfChanged(stageHeart, s.heartRate > 0 ? Ui.RED : Ui.MUTED);
+            if (stagePace != null) {
+                Ui.setTextIfChanged(stagePace, formatCurrentPace(s));
+                Ui.setTextColorIfChanged(stagePace, paceLive ? Ui.CYAN : Ui.MUTED);
+            }
             Ui.setTextIfChanged(stageDistance,
                     String.format(Locale.CHINA, "%.2f", Math.max(0d, s.totalMeters) / 1000d));
             Ui.setTextIfChanged(stageCalories, String.valueOf(s.live.calories));
             ring.set(s.planCompleted ? 1f : (float) s.progress, accent);
         }
 
-        boolean paceLive = Double.isFinite(s.currentSpeedMps)
-                && s.currentSpeedMps >= SpeedFusion.MOVING_THRESHOLD_MPS;
         if (visiblePage == CORE_PAGE) {
             Ui.setTextIfChanged(coreHeader, s.planCompleted ? "自由记录"
                     : String.format(Locale.CHINA, "%s · 第 %d/%d 项%s",
