@@ -34,7 +34,7 @@ const STAGE_KEYS = new Set(['kind', 'unit', 'target'])
 const FACT_KEYS = new Set(['operationId', 'workout'])
 const WORKOUT_KEYS = new Set([
   'schemaVersion', 'id', 'startedAt', 'endedAt', 'durationMs', 'pausedDurationMs',
-  'elapsedDurationMs', 'distanceMeters', 'steps', 'averageHeartRate', 'plan', 'planName',
+  'elapsedDurationMs', 'distanceMeters', 'steps', 'averageHeartRate', 'calories', 'plan', 'planName',
   'planGroup', 'planRequirement', 'planCompletedActiveMs', 'planCompletedWallTime',
   'freeRecordingActiveMs', 'planDistanceMeters', 'freeRecordingDistanceMeters',
   'maxSmoothedSpeedMps', 'routePointCount', 'stageResults', 'averagePaceSecondsPerKm',
@@ -296,6 +296,7 @@ function validWorkout(value: unknown): value is JsonRecord {
   const integerOptionals = [
     'pausedDurationMs', 'elapsedDurationMs', 'planCompletedActiveMs', 'planCompletedWallTime',
     'freeRecordingActiveMs', 'routePointCount', 'averagePaceSecondsPerKm', 'bestPaceSecondsPerKm',
+    'calories',
   ]
   if (integerOptionals.some((key) => value[key] !== undefined && !safeInteger(value[key]))) return false
   const numberOptionals = [
@@ -333,7 +334,7 @@ function validSleepSession(value: unknown): boolean {
 function validSleepRecord(value: unknown): value is JsonRecord {
   return isRecord(value) && exact(value, SLEEP_KEYS) && safeInteger(value.timestamp)
     && safeInteger(value.totalDurationMinutes) && safeInteger(value.sleepScore)
-    && safeInteger(value.spo2AveragePercent) && signedInteger(value.osaResult)
+    && (value.spo2AveragePercent === null || safeInteger(value.spo2AveragePercent)) && signedInteger(value.osaResult)
     && safeInteger(value.heartRateBenchmarkBpm) && finite(value.breathRateBenchmarkPerMinute)
     && validSleepRange(value.heartRateRangeBpm) && validSleepRange(value.breathRateRangePerMinute)
     && Array.isArray(value.sessions) && value.sessions.length <= 50 && value.sessions.every(validSleepSession)
@@ -1112,12 +1113,20 @@ export async function cloudWorkout(db: D1Database, workoutId: string): Promise<J
 export async function summarizeCloudWorkouts(db: D1Database): Promise<JsonRecord> {
   const row = await db.prepare(
     'SELECT COUNT(*) AS workout_count, COALESCE(SUM(duration_ms), 0) AS duration_ms, '
-      + 'COALESCE(SUM(distance_meters), 0) AS distance_meters, COALESCE(SUM(steps), 0) AS steps '
+      + 'COALESCE(SUM(distance_meters), 0) AS distance_meters, COALESCE(SUM(steps), 0) AS steps, '
+      + 'COALESCE(SUM(CAST(json_extract(payload_json, "$.calories") AS INTEGER)), 0) AS total_calories, '
+      + 'AVG(CASE WHEN average_heart_rate > 0 THEN average_heart_rate END) AS avg_hr '
       + 'FROM watch_v3_workouts WHERE owner_id = ? AND tombstoned = 0',
   ).bind(OWNER_ID).first<Record<string, number | string>>()
+  const distanceMeters = Number(row?.distance_meters ?? 0)
+  const calories = Number(row?.total_calories ?? 0)
   return {
-    workoutCount: Number(row?.workout_count ?? 0), totalDurationMs: Number(row?.duration_ms ?? 0),
-    totalDistanceMeters: Number(row?.distance_meters ?? 0), totalSteps: Number(row?.steps ?? 0),
+    workoutCount: Number(row?.workout_count ?? 0),
+    totalDurationMs: Number(row?.duration_ms ?? 0),
+    totalDistanceMeters: distanceMeters,
+    totalSteps: Number(row?.steps ?? 0),
+    totalCalories: calories > 0 ? calories : Math.round(1.036 * 65 * (distanceMeters / 1000)),
+    averageHeartRate: row?.avg_hr != null ? Math.round(Number(row.avg_hr)) : null,
   }
 }
 
@@ -1128,10 +1137,18 @@ export async function cloudSleepRecords(db: D1Database, limit = 31): Promise<Jso
   ).bind(OWNER_ID, Math.max(1, Math.min(31, limit))).all<{
     record_id: string; source_revision: string; payload_json: string; updated_at: string
   }>()
-  return { records: rows.results.map((row) => ({
-    recordId: row.record_id, sourceRevision: row.source_revision,
-    record: JSON.parse(row.payload_json), updatedAt: row.updated_at,
-  })) }
+  return { records: rows.results.map((row) => {
+    const raw = JSON.parse(row.payload_json) as JsonRecord
+    const spo2 = Number(raw.spo2AveragePercent ?? 0)
+    const normalized = {
+      ...raw,
+      spo2AveragePercent: spo2 > 0 ? spo2 : null,
+    }
+    return {
+      recordId: row.record_id, sourceRevision: row.source_revision,
+      record: normalized, updatedAt: row.updated_at,
+    }
+  }) }
 }
 
 export async function summarizeCloudSleep(db: D1Database): Promise<JsonRecord> {

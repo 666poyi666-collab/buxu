@@ -17,7 +17,7 @@
   // WATCH_AUTHORITY_CAPABILITY is an independent wao_* secret. The central authority binds this
   // Worker as WATCH_OBSERVATION; neither value is shared with OAuth or device authentication.
   "vars": {
-    "BUILD_COMMIT": "44541e938d0e3b37b62391b48e63b7191323b37a",
+    "BUILD_COMMIT": "30fddbc25042d340e738436df82a4c9f3789b3fb",
     "OAUTH_ISSUER": "https://poyi-oauth-as.focuslink-poyi-6465e9.workers.dev",
     "OAUTH_AUDIENCE": "https://watch-mcp.focuslink-poyi-6465e9.workers.dev/mcp",
     "OAUTH_JWKS_URL": "https://poyi-oauth-as.focuslink-poyi-6465e9.workers.dev/jwks.json",

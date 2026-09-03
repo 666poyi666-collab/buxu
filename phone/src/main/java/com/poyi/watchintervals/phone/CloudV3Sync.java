@@ -50,7 +50,7 @@ final class CloudV3Sync {
             "pairingCode");
     private static final Set<String> WORKOUT_FIELDS = Set.of(
             "schemaVersion", "id", "startedAt", "endedAt", "durationMs", "pausedDurationMs",
-            "elapsedDurationMs", "distanceMeters", "steps", "averageHeartRate", "plan",
+            "elapsedDurationMs", "distanceMeters", "steps", "averageHeartRate", "calories", "plan",
             "planName", "planGroup", "planRequirement", "planCompletedActiveMs",
             "planCompletedWallTime", "freeRecordingActiveMs", "planDistanceMeters",
             "freeRecordingDistanceMeters", "maxSmoothedSpeedMps", "routePointCount",
@@ -67,7 +67,7 @@ final class CloudV3Sync {
     private static final Set<String> OPTIONAL_WORKOUT_INTEGERS = Set.of(
             "pausedDurationMs", "elapsedDurationMs", "planCompletedActiveMs",
             "planCompletedWallTime", "freeRecordingActiveMs", "routePointCount",
-            "averagePaceSecondsPerKm", "bestPaceSecondsPerKm");
+            "averagePaceSecondsPerKm", "bestPaceSecondsPerKm", "calories");
     private static final Set<String> OPTIONAL_WORKOUT_NUMBERS = Set.of(
             "planDistanceMeters", "freeRecordingDistanceMeters", "maxSmoothedSpeedMps",
             "averageCadenceSpm", "elevationGainMeters");

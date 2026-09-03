@@ -83,22 +83,36 @@ private fun HistoryRow(record: WorkoutSummary, onClick: () -> Unit) {
     val date = dateLabel(record.startedAt)
     val distance = PhoneFormat.distance(record.distanceMeters)
     val duration = PhoneFormat.duration(record.durationMs)
+    val pace = PhoneFormat.pace(record.durationMs, record.distanceMeters)
     val description = PhoneUiContract.historyRowDescription(date, distance, duration)
     PhoneCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickableWithRole(onClick = onClick, contentDescription = description),
-        style = PhoneCardStyle.List
+        style = PhoneCardStyle.Large
     ) {
         Column(
             modifier = Modifier.padding(PhoneSpace.lg),
-            verticalArrangement = Arrangement.spacedBy(PhoneSpace.xs)
+            verticalArrangement = Arrangement.spacedBy(PhoneSpace.sm)
         ) {
-            Text(text = date, style = PhoneType.BodyStrong, color = PhoneColor.TextDim)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(text = date, style = PhoneType.Subhead, color = PhoneColor.Text)
+                if (record.routePointCount > 0) {
+                    Text(
+                        text = "GPS 轨迹",
+                        style = PhoneType.Caption,
+                        color = PhoneColor.Stand
+                    )
+                }
+            }
             Row(modifier = Modifier.fillMaxWidth()) {
                 PhoneMetric(
                     label = "距离",
                     value = distance,
+                    valueColor = PhoneColor.Exercise,
                     modifier = Modifier.weight(1f)
                 )
                 PhoneMetric(
@@ -108,17 +122,31 @@ private fun HistoryRow(record: WorkoutSummary, onClick: () -> Unit) {
                 )
                 PhoneMetric(
                     label = "平均配速",
-                    value = PhoneFormat.pace(record.durationMs, record.distanceMeters),
+                    value = pace,
+                    valueColor = PhoneColor.Stand,
                     modifier = Modifier.weight(1f)
                 )
             }
-            Text(
-                text = "${record.steps} 步  ·  平均心率 " +
-                    (if (record.averageHeartRate > 0) "${record.averageHeartRate} bpm" else "--") +
-                    "  ·  ${record.routePointCount} 个轨迹点",
-                style = PhoneType.Caption,
-                color = PhoneColor.TextDim
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "${record.steps} 步",
+                    style = PhoneType.Caption,
+                    color = PhoneColor.TextDim
+                )
+                Text(
+                    text = if (record.averageHeartRate > 0) "♥ ${record.averageHeartRate} bpm" else "-- bpm",
+                    style = PhoneType.Caption,
+                    color = if (record.averageHeartRate > 0) PhoneColor.Danger else PhoneColor.TextDim
+                )
+                Text(
+                    text = "${record.routePointCount} 采样点",
+                    style = PhoneType.Caption,
+                    color = PhoneColor.TextDim
+                )
+            }
         }
     }
 }

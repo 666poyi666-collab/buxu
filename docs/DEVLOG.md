@@ -245,3 +245,35 @@
   - 双端 Debug APK 构建完成并已成功覆盖安装到真实在线设备：
     - 手表：`2e28bb17`（OWW221，Streamed Install Success）
     - 手机：`192.168.1.5:5555`（xaga，Streamed Install Success）
+
+## 2026-09-03（云端 MCP 运动统计补全、血氧缺失值规范化、ChatGPT 缓存说明与双端极致美感 HUD 落地）
+
+- 用户实测反馈处理与功能闭环：
+  1. **运动汇总 `watch_summarize_workouts` 补齐热量与平均心率**：
+     - 云端 `cloud-v3.ts` 的 `summarizeCloudWorkouts` 新增：
+       - `totalCalories`：通过 SQL `json_extract(payload_json, '$.calories')` 聚合；历史记录若无则以距离系数保底计算 `Math.round(1.036 * 65 * km)`。
+       - `averageHeartRate`：计算活跃锻炼的加权/平均心率 `AVG(CASE WHEN average_heart_rate > 0 THEN average_heart_rate END)`。
+     - 更新 `TOOLS` 描述与 schema，明确支持热量与平均心率汇总。
+     - `CloudV3Sync.java` 与 `cloud-v3.ts` 同步将 `calories` 纳入 `WORKOUT_FIELDS` 严格白名单与整数校验，确保后续同步全量保留热量。
+  2. **睡眠血氧 `spo2AveragePercent` 缺失值安全处理**：
+     - 用户指出血氧缺失返回 `0` 会被 ChatGPT 误解为“血氧 0%”，应以 `null` 表达缺失。
+     - `cloudSleepRecords` 已改为 `spo2 > 0 ? spo2 : null`；`validSleepRecord` 显式放行 `null`，彻底避免 AI 误诊恐慌。
+  3. **ChatGPT 仅枚举 21 个工具原因定位与上线**：
+     - 定位发现用户连接器创建时绑定的是 `ae0c60a` 历史版本的 21 个工具清单，ChatGPT 侧会对 MCP Connector 的工具集进行持久化快照缓存。
+     - 本次已将最新 26 个工具（含 `watch_list_health_records`、`watch_summarize_health`、`watch_replace_plan_stages`）经由 `npx wrangler deploy` 成功发布上线至生产 Worker（`buildCommit = 30fddbc…`），用户只需在 ChatGPT 设置中点击一次“重新连接”或刷新连接器，即可瞬间拉取完整 26 工具目录。
+
+- 双端 UI 极致美感重构（现代奢华运动穿戴 HUD）：
+  1. **手机端 `WorkoutScreen.kt`（实时运动监控 HUD）**：
+     - 采用深邃暗夜黑蓝 `#0F172A` 配合高精细边框 `#1E293B`。
+     - 44sp 等宽巨型数字计时器、阶段动态胶囊徽章（如“第 2/6 项 · 跑步 400米”）。
+     - 4 大主指标 HUD 矩阵：累计距离（翡翠绿 `#10B981`）、当前配速（活力青 `#38BDF8`）、实时心率（亮红 `#EF4444`）、消耗热量（暖橙 `#F59E0B`）。
+     - 底部半透明生理数据胶囊：步频、步数、平均心率实时滚动。
+  2. **手机端 `HistoryScreen.kt`（高质感训练履历卡片）**：
+     - 重新设计 `HistoryRow`，加入大号距离英雄数字、用时/配速多维指标条以及 GPS 轨迹高亮标签，视觉层级鲜明。
+
+- 门禁与实机部署：
+  - Cloudflare Worker 40 项全量测试、类型检查全部通过；线上发布成功（Version ID: `47ff392a…`）。
+  - Android JVM 测试（`:phone:testDebugUnitTest :app:testDebugUnitTest`）全部通过。
+  - 双端 Debug APK 构建完成并通过 ADB 覆盖安装至在线真机：
+    - 手表：`2e28bb17`（OWW221，Success）
+    - 手机：`192.168.1.4:5555`（xaga，Success）
