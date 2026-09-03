@@ -206,9 +206,6 @@ public class MainActivity extends WatchActivity {
         TextView edit = Ui.iconAction(this, "更换计划", 14, Ui.WHITE, Ui.PANEL, Ui.Symbol.LIST);
         LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.ACTION_SECONDARY));
         editParams.topMargin = Ui.dp(this, 3); root.addView(edit, editParams);
-        LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 14));
-        dotParams.topMargin = Ui.dp(this, 2);
-        root.addView(Ui.pagerDots(this, 0, 3), dotParams);
         start.setOnClickListener(v -> requestAndStart());
         edit.setOnClickListener(v -> startActivity(new Intent(this, PlanActivity.class)));
         scroll.addView(root);
@@ -217,7 +214,7 @@ public class MainActivity extends WatchActivity {
         // the right, so a leftward finger drag reveals it pixel-for-pixel.
         pagesList.add(scroll); pagesList.add(buildHistoryPagerPage()); pagesList.add(buildPlanPagerPage());
         WatchPagerLayout pager = new WatchPagerLayout(this); for(View page:pagesList)pager.addView(page); pager.setCurrentItem(0, false);
-        pager.setPageIndicatorEnabled(true);
+        pager.setPageIndicatorEnabled(false);
         // These three pages only change on resume or once per minute, so prewarming their render
         // layers while idle makes finger-following cheap. The live five-page workout opts out.
         pager.setStaticPageCachingEnabled(true);
@@ -451,7 +448,6 @@ public class MainActivity extends WatchActivity {
         pagerHistorySummary=Ui.bold(this,"",12,Ui.RED);page.addView(pagerHistorySummary,new LinearLayout.LayoutParams(-1,Ui.dp(this,24)));
         ScrollView scroll=new ScrollView(this);pagerHistoryList=new LinearLayout(this);pagerHistoryList.setOrientation(LinearLayout.VERTICAL);scroll.addView(pagerHistoryList);page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         TextView all=Ui.iconAction(this,"查看完整历史",15,Ui.WHITE,Ui.PANEL,Ui.Symbol.HISTORY);all.setOnClickListener(v->startActivity(new Intent(this,HistoryActivity.class)));page.addView(all,new LinearLayout.LayoutParams(-1,Ui.dp(this,Ui.ACTION_SECONDARY)));
-        page.addView(Ui.pagerDots(this,1,3),new LinearLayout.LayoutParams(-1,Ui.dp(this,14)));
         return page;
     }
 
@@ -480,7 +476,6 @@ public class MainActivity extends WatchActivity {
         LinearLayout.LayoutParams editParams=new LinearLayout.LayoutParams(0,Ui.dp(this,Ui.ACTION_PRIMARY),1);editParams.rightMargin=Ui.dp(this,6);actions.addView(edit,editParams);
         TextView voice=Ui.iconAction(this,"提示音",15,Ui.WHITE,Ui.PANEL,Ui.Symbol.SOUND);voice.setOnClickListener(v->startActivity(new Intent(this,VoiceCueSettingsActivity.class)));actions.addView(voice,new LinearLayout.LayoutParams(0,Ui.dp(this,Ui.ACTION_PRIMARY),1));
         page.addView(actions,new LinearLayout.LayoutParams(-1,Ui.dp(this,Ui.ACTION_PRIMARY)));
-        page.addView(Ui.pagerDots(this,2,3),new LinearLayout.LayoutParams(-1,Ui.dp(this,14)));
         return page;
     }
 

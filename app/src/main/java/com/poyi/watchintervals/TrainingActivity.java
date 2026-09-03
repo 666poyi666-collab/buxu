@@ -132,7 +132,7 @@ public class TrainingActivity extends WatchActivity {
         workoutPager.addView(corePage);
         workoutPager.addView(extraPage);
         workoutPager.addView(routePanel);   // index == ROUTE_PAGE
-        workoutPager.setPageIndicatorEnabled(true);
+        workoutPager.setPageIndicatorEnabled(false);
         workoutPager.setCurrentItem(STAGE_PAGE, false);
         shell.addView(workoutPager, new FrameLayout.LayoutParams(-1, -1));
 
@@ -257,29 +257,29 @@ public class TrainingActivity extends WatchActivity {
         root.addView(header, new LinearLayout.LayoutParams(-1, Ui.dp(this, 40)));
 
         LinearLayout hero = new LinearLayout(this);
-        duration = Ui.metricCell(this, hero, "训练时间", "00:00", "", Ui.WHITE, 38);
-        coreRemaining = Ui.metricCell(this, hero, "本阶段剩余", "--", "", Ui.YELLOW, 36);
-        root.addView(hero, new LinearLayout.LayoutParams(-1, Ui.dp(this, 68)));
+        duration = Ui.metricCell(this, hero, "用时", "00:00", "", Ui.WHITE, 42);
+        coreRemaining = Ui.metricCell(this, hero, "阶段剩余", "--", "", Ui.YELLOW, 38);
+        root.addView(hero, new LinearLayout.LayoutParams(-1, Ui.dp(this, 70)));
         root.addView(Ui.divider(this));
 
         LinearLayout distanceRow = new LinearLayout(this);
-        distance = Ui.metricCell(this, distanceRow, "距离", "0.00", "公里", Ui.LIME, 32);
-        root.addView(distanceRow, new LinearLayout.LayoutParams(-1, Ui.dp(this, 50)));
+        distance = Ui.metricCell(this, distanceRow, "距离", "0.00", "公里", Ui.LIME, 36);
+        root.addView(distanceRow, new LinearLayout.LayoutParams(-1, Ui.dp(this, 52)));
         root.addView(Ui.divider(this));
 
         LinearLayout primary = new LinearLayout(this);
-        pace = Ui.metricCell(this, primary, "当前配速", "--", "/公里", Ui.CYAN, 32);
-        heart = Ui.metricCell(this, primary, "当前心率", "--", "次/分", Ui.RED, 34);
-        LinearLayout.LayoutParams primaryParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 64));
+        pace = Ui.metricCell(this, primary, "配速", "--", "/公里", Ui.CYAN, 36);
+        heart = Ui.metricCell(this, primary, "心率", "--", "次/分", Ui.RED, 38);
+        LinearLayout.LayoutParams primaryParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 66));
         primaryParams.topMargin = Ui.dp(this, 4); primaryParams.bottomMargin = Ui.dp(this, 4);
         root.addView(primary, primaryParams);
         root.addView(Ui.divider(this));
 
         LinearLayout compact = new LinearLayout(this);
-        cadence = Ui.metricCell(this, compact, "步频", "--", "spm", Ui.YELLOW, 22);
-        calories = Ui.metricCell(this, compact, "热量", "0", "千卡", Ui.AMBER, 22);
-        climb = Ui.metricCell(this, compact, "累计爬升", "0", "米", Ui.LIME, 22);
-        root.addView(compact, new LinearLayout.LayoutParams(-1, Ui.dp(this, 50)));
+        cadence = Ui.metricCell(this, compact, "步频", "--", "spm", Ui.YELLOW, 24);
+        calories = Ui.metricCell(this, compact, "热量", "0", "千卡", Ui.AMBER, 24);
+        climb = Ui.metricCell(this, compact, "爬升", "0", "米", Ui.LIME, 24);
+        root.addView(compact, new LinearLayout.LayoutParams(-1, Ui.dp(this, 52)));
 
         zoneBar = new Ui.ZoneBar(this);
         LinearLayout.LayoutParams zoneParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 10));
@@ -292,7 +292,6 @@ public class TrainingActivity extends WatchActivity {
         traceParams.bottomMargin = Ui.dp(this, 3);
         root.addView(heartTrace, traceParams);
 
-        root.addView(Ui.pagerDots(this, CORE_PAGE, 5), new LinearLayout.LayoutParams(-1, Ui.dp(this, 14)));
         return root;
     }
 
@@ -307,21 +306,20 @@ public class TrainingActivity extends WatchActivity {
         extraClock = Ui.topBar(this, root, title);
 
         LinearLayout first = new LinearLayout(this);
-        avgPace = Ui.metricCell(this, first, "平均配速", "--", "/公里", Ui.CYAN, 29);
-        averageHeart = Ui.metricCell(this, first, "平均心率", "--", "次/分", Ui.RED, 29);
+        avgPace = Ui.metricCell(this, first, "均速", "--", "/公里", Ui.CYAN, 34);
+        averageHeart = Ui.metricCell(this, first, "均心", "--", "次/分", Ui.RED, 34);
         root.addView(first, extraRowParams());
         root.addView(Ui.divider(this));
         LinearLayout second = new LinearLayout(this);
-        speed = Ui.metricCell(this, second, "当前时速", "--", "km/h", Ui.WHITE, 29);
-        maxSpeed = Ui.metricCell(this, second, "最高时速", "--", "km/h", Ui.WHITE, 29);
+        speed = Ui.metricCell(this, second, "时速", "--", "km/h", Ui.WHITE, 34);
+        maxSpeed = Ui.metricCell(this, second, "极速", "--", "km/h", Ui.WHITE, 34);
         root.addView(second, extraRowParams());
         root.addView(Ui.divider(this));
         LinearLayout third = new LinearLayout(this);
-        steps = Ui.metricCell(this, third, "步数", "0", "步", Ui.YELLOW, 29);
-        maxHeart = Ui.metricCell(this, third, "最高心率", "--", "次/分", Ui.RED, 29);
+        steps = Ui.metricCell(this, third, "步数", "0", "步", Ui.YELLOW, 34);
+        maxHeart = Ui.metricCell(this, third, "最高心率", "--", "次/分", Ui.RED, 34);
         root.addView(third, extraRowParams());
 
-        root.addView(Ui.pagerDots(this, EXTRA_PAGE, 5), new LinearLayout.LayoutParams(-1, Ui.dp(this, 14)));
         return root;
     }
 
@@ -363,7 +361,6 @@ public class TrainingActivity extends WatchActivity {
         controls.addView(stop, new LinearLayout.LayoutParams(0, Ui.dp(this, Ui.ACTION_CONTROL), 1));
         page.addView(controls, new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.ACTION_CONTROL + 8f)));
         page.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 1));
-        page.addView(Ui.pagerDots(this, CONTROL_PAGE, 5), new LinearLayout.LayoutParams(-1, Ui.dp(this, 14)));
         pause.setOnClickListener(v -> { if (service != null) service.togglePause(); });
         stop.setOnClickListener(v -> confirmStop());
         return page;
@@ -471,7 +468,6 @@ public class TrainingActivity extends WatchActivity {
         TextView hint = Ui.text(this, "红色起点 · 白色当前位置", 10, Ui.MUTED);
         hint.setGravity(Gravity.CENTER);
         panel.addView(hint, new LinearLayout.LayoutParams(-1, Ui.dp(this, 17)));
-        panel.addView(Ui.pagerDots(this, ROUTE_PAGE, 5), new LinearLayout.LayoutParams(-1, Ui.dp(this, 14)));
         close.setOnClickListener(v -> hideRoute());
         return panel;
     }
