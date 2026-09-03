@@ -72,7 +72,11 @@ public final class WatchSurfaceRestorer {
         app.registerReceiver(new BroadcastReceiver() {
             @Override public void onReceive(Context ctx, Intent intent) {
                 String action = intent.getAction();
-                if (Intent.ACTION_SCREEN_ON.equals(action) || Intent.ACTION_USER_PRESENT.equals(action)) {
+                if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                    if (WorkoutService.hasRecoverableSession(ctx)) {
+                        restoreSurface(ctx);
+                    }
+                } else if (Intent.ACTION_SCREEN_ON.equals(action) || Intent.ACTION_USER_PRESENT.equals(action)) {
                     restoreSurface(ctx);
                 }
             }
@@ -94,7 +98,7 @@ public final class WatchSurfaceRestorer {
         if (target == null) return;
 
         long now = SystemClock.elapsedRealtime();
-        if (now - lastRestoreElapsed < 150L) return;
+        if (now - lastRestoreElapsed < 80L) return;
         lastRestoreElapsed = now;
 
         // 1. 尝试将整个应用任务栈提升至最前台

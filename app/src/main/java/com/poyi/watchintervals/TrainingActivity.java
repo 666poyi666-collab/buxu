@@ -100,6 +100,13 @@ public class TrainingActivity extends WatchActivity {
         if (service != null) service.onWorkoutSurfaceVisible();
     }
 
+    @Override protected void onPause() {
+        super.onPause();
+        if (WorkoutService.hasRecoverableSession(this) && !isFinishing()) {
+            WatchSurfaceRestorer.restoreSurface(this);
+        }
+    }
+
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
@@ -157,34 +164,32 @@ public class TrainingActivity extends WatchActivity {
     private LinearLayout buildDataPage() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 8), Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 4));
+        root.setPadding(Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 4), Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 2));
         root.setBackgroundColor(Ui.BLACK);
 
         LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
         TextView section = Ui.bold(this, "阶段进度", Ui.FIGURE_LABEL, Ui.WHITE);
         top.addView(section, new LinearLayout.LayoutParams(0, -1, 1));
         stageCounter = Ui.chip(this, "第 1/2 项", Ui.LIME, Ui.TINT_LIME);
-        top.addView(stageCounter, new LinearLayout.LayoutParams(Ui.dp(this, 92), Ui.dp(this, 26)));
-        root.addView(top, new LinearLayout.LayoutParams(-1, Ui.dp(this, 34)));
+        top.addView(stageCounter, new LinearLayout.LayoutParams(Ui.dp(this, 84), Ui.dp(this, 22)));
+        root.addView(top, new LinearLayout.LayoutParams(-1, Ui.dp(this, 24)));
 
-        stageName = Ui.bold(this, "准备", 23, Ui.LIME); stageName.setGravity(Gravity.CENTER);
-        root.addView(stageName, new LinearLayout.LayoutParams(-1, Ui.dp(this, 34)));
+        stageName = Ui.bold(this, "准备", 21, Ui.LIME); stageName.setGravity(Gravity.CENTER);
+        root.addView(stageName, new LinearLayout.LayoutParams(-1, Ui.dp(this, 28)));
 
         FrameLayout ringBox = new FrameLayout(this);
         ring = new Ui.Ring(this);
-        FrameLayout.LayoutParams ringParams = new FrameLayout.LayoutParams(Ui.dp(this, 196), Ui.dp(this, 196), Gravity.CENTER);
+        FrameLayout.LayoutParams ringParams = new FrameLayout.LayoutParams(Ui.dp(this, 116), Ui.dp(this, 116), Gravity.CENTER);
         ringBox.addView(ring, ringParams);
         LinearLayout center = new LinearLayout(this);
         center.setOrientation(LinearLayout.VERTICAL);
         center.setGravity(Gravity.CENTER);
-        remainingLabel = Ui.bold(this, "剩余距离", Ui.LABEL, Ui.MUTED); remainingLabel.setGravity(Gravity.CENTER);
+        remainingLabel = Ui.bold(this, "剩余距离", 11, Ui.MUTED); remainingLabel.setGravity(Gravity.CENTER);
         center.addView(remainingLabel, new LinearLayout.LayoutParams(-2, -2));
-        remaining = Ui.numeral(this, "--", 50, Ui.WHITE); remaining.setGravity(Gravity.CENTER);
+        remaining = Ui.numeral(this, "--", 34, Ui.WHITE); remaining.setGravity(Gravity.CENTER);
         center.addView(remaining, new LinearLayout.LayoutParams(-2, -2));
         ringBox.addView(center, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
-        // Let the ring panel consume the actual remaining 496 px canvas. The previous fixed
-        // 204 dp box plus a weighted empty View left a visible black chin on the watch.
-        root.addView(ringBox, new LinearLayout.LayoutParams(-1, 0, 1));
+        root.addView(ringBox, new LinearLayout.LayoutParams(-1, Ui.dp(this, 118)));
 
         LinearLayout stageMetrics = new LinearLayout(this);
         stageMetrics.setGravity(Gravity.CENTER_VERTICAL);
@@ -197,9 +202,9 @@ public class TrainingActivity extends WatchActivity {
         root.addView(stageMetrics, metricsParams);
 
         stageProgress = Ui.text(this, "本阶段 --", Ui.LABEL, Ui.MUTED); stageProgress.setGravity(Gravity.CENTER);
-        root.addView(stageProgress, new LinearLayout.LayoutParams(-1, Ui.dp(this, 28)));
+        root.addView(stageProgress, new LinearLayout.LayoutParams(-1, Ui.dp(this, 20)));
 
-        root.addView(Ui.pagerDots(this, STAGE_PAGE, 5), new LinearLayout.LayoutParams(-1, Ui.dp(this, 14)));
+        root.addView(Ui.pagerDots(this, STAGE_PAGE, 5), new LinearLayout.LayoutParams(-1, Ui.dp(this, 10)));
         return root;
     }
 

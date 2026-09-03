@@ -866,7 +866,7 @@ final class Ui {
 
         Ring(Context context) {
             super(context);
-            float stroke = dp(context, 9);
+            float stroke = dp(context, 5);
             track.setStyle(android.graphics.Paint.Style.STROKE);
             track.setStrokeWidth(stroke);
             track.setColor(LINE);

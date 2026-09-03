@@ -179,6 +179,7 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         @Override public void onReceive(Context context, Intent intent) {
             if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
                 screenWasOff = true;
+                restoreTrainingSurface();
             } else if (Intent.ACTION_SCREEN_ON.equals(intent.getAction()) && screenWasOff) {
                 screenWasOff = false;
                 restoreTrainingSurface();
