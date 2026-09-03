@@ -33,6 +33,7 @@ final class WatchCommandRouter implements AutoCloseable {
             if("GET".equals(method)&&"/v1/history".equals(path))return ok(HistoryStore.toJson(context).toString());
             if("GET".equals(method)&&("/v1/sleep".equals(path)||path.startsWith("/v1/sleep?")))return ok(sleep.read(queryDays(path),queryInt(path,"offsetDays",0,0,365)).toString());
             if("GET".equals(method)&&("/v1/health".equals(path)||path.startsWith("/v1/health?")))return ok(health.read(queryDays(path)).toString());
+            if("POST".equals(method)&&"/v1/health/insert".equals(path))return healthInsert(body);
             if("GET".equals(method)&&path.startsWith("/v1/history/")&&path.contains("/route")){String id=historyId(path,"/route");return ok(HistoryStore.routePage(context,id,queryInt(path,"cursor",0,0,Integer.MAX_VALUE),queryInt(path,"limit",500,1,1000)).toString());}
             if("GET".equals(method)&&path.startsWith("/v1/history/")&&path.contains("/heart")){String id=historyId(path,"/heart");return ok(HistoryStore.heartPage(context,id,queryInt(path,"cursor",0,0,Integer.MAX_VALUE),queryInt(path,"limit",500,1,1000)).toString());}
             if("GET".equals(method)&&path.startsWith("/v1/history/")){WorkoutRecord record=HistoryStore.find(context,path.substring("/v1/history/".length()));return record==null?error(404,"workout_not_found"):ok(record.toJson().toString());}
@@ -176,4 +177,19 @@ final class WatchCommandRouter implements AutoCloseable {
     private Result ok(String body){return new Result(200,body);}
     private Result error(int status,String code){try{return new Result(status,new JSONObject().put("error",code).toString());}catch(Exception ignored){return new Result(status,"{}");}}
     @Override public void close(){sleep.close();health.close();}
+
+    private Result healthInsert(String body) throws Exception {
+        JSONObject json = body == null || body.isEmpty() ? new JSONObject() : new JSONObject(body);
+        long now = System.currentTimeMillis() / 1000L;
+        long duration = json.optLong("duration", 1800L);
+        long endTime = json.optLong("endTime", now);
+        long startTime = json.optLong("startTime", endTime - duration);
+        double calories = json.optDouble("calories", 150.0);
+        int avgHr = json.optInt("avgHeartRate", 125);
+        int maxHr = json.optInt("maxHeartRate", 155);
+        int exerciseType = json.optInt("exerciseType", 0x2714);
+        String pkg = json.optString("packageName", context.getPackageName());
+        JSONObject res = health.insertExerciseSession(startTime, endTime, duration, calories, avgHr, maxHr, exerciseType, pkg);
+        return ok(res.toString());
+    }
 }

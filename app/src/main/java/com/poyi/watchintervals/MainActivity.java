@@ -70,10 +70,10 @@ public class MainActivity extends WatchActivity {
         }
         // The manufacturer health summary (daily activity / heart-rate stats) needs its own HealthKit
         // permission, requested independently of sleep so a denied sleep prompt never blocks it.
-        if (!getPreferences(MODE_PRIVATE).getBoolean("health_permission_prompted", false)) {
-            getPreferences(MODE_PRIVATE).edit().putBoolean("health_permission_prompted", true).apply();
+        if (!getPreferences(MODE_PRIVATE).getBoolean("health_permission_v4_prompted", false)) {
+            getPreferences(MODE_PRIVATE).edit().putBoolean("health_permission_v4_prompted", true).apply();
             if (!SystemHealthBridge.requestPermission(this, REQUEST_HEALTH_PERMISSION)) {
-                getPreferences(MODE_PRIVATE).edit().putBoolean("health_permission_prompted", false).apply();
+                getPreferences(MODE_PRIVATE).edit().putBoolean("health_permission_v4_prompted", false).apply();
             }
         }
     }
@@ -404,7 +404,7 @@ public class MainActivity extends WatchActivity {
             getPreferences(MODE_PRIVATE).edit().putBoolean("sleep_permission_prompted", false).apply();
         }
         if (requestCode == REQUEST_HEALTH_PERMISSION && resultCode != RESULT_OK) {
-            getPreferences(MODE_PRIVATE).edit().putBoolean("health_permission_prompted", false).apply();
+            getPreferences(MODE_PRIVATE).edit().putBoolean("health_permission_v4_prompted", false).apply();
         }
         if (requestCode == REQUEST_WORKOUT_OVERLAY) startTraining();
     }

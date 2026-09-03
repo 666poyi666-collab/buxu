@@ -1,5 +1,24 @@
 # Development Log
 
+## 2026-09-03（健康系统写入通道与运动服务逆向调通）
+
+- **写入通道与 IPC 架构调通**：
+  - 逆向实机 `HeyHealthService.apk` 确认 `IStoreApiService` 写入事务码为 `TRANSACTION_INSERT_RECORDS = 4`（读取为 5）；
+  - 回调接口对齐为 `IInsertRecordsCallback`（描述符 `com.oplus.wearable.healthkit.store.IInsertRecordsCallback`，事务 1 为成功响应 `InsertRecordsResponse`，事务 2 为失败错误信息）；
+  - 请求协议结构采用 `StoreProto$InsertRecordsRequest`，封装 `setType` 与 `setRecords(ByteString)`。
+- **健康读写双向权限系统升级**：
+  - 确认 `StoreProto$Permission` 访问类型为独立枚举 `AccessType`：`1` 为 `READ`，`2` 为 `WRITE`；
+  - `SystemHealthBridge.requestPermission` 升级为对包含 `DailyActivityRecord`、`ExerciseSessionRecord`、`SportRecord`、`HeartRateRecord` 等全部候选类型同时申请 `READ(1)` 与 `WRITE(2)`；
+  - 在实机 `OWW221` 上成功唤起官方 `PermissionActivity`，完成“写入每日活动数据”、“写入运动数据”、“写入心率数据”开关确认授权。
+- **固件底层存储架构深入探明**：
+  - 探针验证：带权调用写入接口，成功通过权限校验；
+  - 逆向分析表明当前固件版本 `StoreApiService.d`（insertRecords）对直接 Proto 写入仅处理 `BloodGlucose*` 类型，其余返回 `Data type not supported`；
+  - 完整的运动记录生成与同步引擎确认为同包系统服务 `ExerciseService`（Action: `heytap.wearable.intent.action.BIND_EXERCISE_SERVICE`，Descriptor: `com.oplus.wearable.health.service.client.impl.IExerciseApiService`，权限为 Normal 级别的 `BIND_EXERCISE_SERVICE`，本应用已获授权）；
+  - 运动生命周期接口包含 `prepareExercise`、`startExercise`、`pauseExercise`、`resumeExercise`、`markExerciseLap`、`endExercise` 及 `getLastEndData`，调用结束即自动生成官方系统运动记录并触发与手机“健康”App 的自动配对同步。
+- **构建与测试**：
+  - 本地提供 `POST /v1/health/insert` 测试端点；
+  - 严格遵守 ASCII 工作副本规范，单元测试与真机部署全部通过。
+
 ## 2026-08-20
 
 - 从 `watch-cloud-mcp` 导入云端代码到 `cloud/mcp`，不再把云端 MCP 当作独立产品。

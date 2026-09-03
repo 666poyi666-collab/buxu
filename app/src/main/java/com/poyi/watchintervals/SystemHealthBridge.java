@@ -34,13 +34,22 @@ final class SystemHealthBridge {
     private static final String STORE_ACTION = "heytap.wearable.intent.action.BIND_STORE_SERVICE";
     private static final String STORE_DESCRIPTOR = "com.oplus.wearable.healthkit.store.IStoreApiService";
     private static final String CALLBACK_DESCRIPTOR = "com.oplus.wearable.healthkit.store.IReadRecordsCallback";
+    private static final String INSERT_CALLBACK_DESCRIPTOR = "com.oplus.wearable.healthkit.store.IInsertRecordsCallback";
+    private static final int TRANSACTION_INSERT_RECORDS = 4;
     private static final int TRANSACTION_READ_RECORDS = 5;
 
     private static final String PREFIX = "com.oplus.wearable.healthkit.proto.";
     private static final String PERMISSION_ACTION =
             "heytap.wearable.intent.action.health.ACTION_REQUEST_PERMISSIONS";
+    // Every record type the firmware store recognized in probing (Missing permissions = exists but
+    // not yet granted). Requesting them all lets one permission screen unlock every data family.
     private static final String[] HEALTH_RECORD_TYPES = {
         "DailyActivityRecord", "HeartRateStatsRecord", "HeartRateRecord",
+        "ExerciseSessionRecord", "SportRecord", "RunSportRecord", "SportSessionRecord",
+        "ExerciseRecord", "DailySportRecord", "StepsRecord", "StepRecord",
+        "HeartRateDetailRecord", "HeartRateVariabilityRecord", "BloodOxygenRecord",
+        "StressRecord", "WeightRecord", "BodyCompositionRecord", "DistanceRecord",
+        "RunRecord", "OutdoorRunRecord",
     };
 
     private final Context context;
@@ -64,11 +73,13 @@ final class SystemHealthBridge {
                     "com.oplus.wearable.healthkit.proto.StoreProto$Permissions", true, loader);
             Object permissionsBuilder = permissionsProto.getMethod("newBuilder").invoke(null);
             for (String type : HEALTH_RECORD_TYPES) {
-                Object permission = permissionProto.getMethod("newBuilder").invoke(null);
-                invoke(permission, "setDataType", String.class, type);
-                invoke(permission, "setAccessType", int.class, 1);
-                Object built = permission.getClass().getMethod("build").invoke(permission);
-                invoke(permissionsBuilder, "addPermissions", permissionProto, built);
+                for (int accessType : new int[]{1, 2}) { // 1 = READ, 2 = WRITE
+                    Object permission = permissionProto.getMethod("newBuilder").invoke(null);
+                    invoke(permission, "setDataType", String.class, type);
+                    invoke(permission, "setAccessType", int.class, accessType);
+                    Object built = permission.getClass().getMethod("build").invoke(permission);
+                    invoke(permissionsBuilder, "addPermissions", permissionProto, built);
+                }
             }
             Object permissions = permissionsBuilder.getClass().getMethod("build").invoke(permissionsBuilder);
             byte[] data = (byte[]) permissions.getClass().getMethod("toByteArray").invoke(permissions);
@@ -383,6 +394,140 @@ final class SystemHealthBridge {
                 return true;
             }
             data.enforceInterface(CALLBACK_DESCRIPTOR);
+            if (code == 1) {
+                if (data.readInt() != 0) responseBytes = data.createByteArray();
+                reply.writeNoException();
+                done.countDown();
+                return true;
+            }
+            if (code == 2) {
+                error = data.readString();
+                reply.writeNoException();
+                done.countDown();
+                return true;
+            }
+            return super.onTransact(code, data, reply, flags);
+        }
+    }
+
+    JSONObject insertRecords(String recordType, byte[] recordsBytes) {
+        JSONObject result = new JSONObject();
+        try {
+            IBinder binder = awaitStore();
+            ClassLoader loader = loader();
+            byte[] request = buildInsertRequest(loader, recordType, recordsBytes);
+            InsertCallback callback = new InsertCallback(loader);
+            Parcel data = Parcel.obtain();
+            Parcel reply = Parcel.obtain();
+            try {
+                data.writeInterfaceToken(STORE_DESCRIPTOR);
+                data.writeInt(1);
+                data.writeByteArray(request);
+                data.writeStrongBinder(callback);
+                if (!binder.transact(TRANSACTION_INSERT_RECORDS, data, reply, 0)) {
+                    return result.put("status", "error").put("reason", "store_transaction_rejected");
+                }
+                reply.readException();
+            } finally {
+                reply.recycle();
+                data.recycle();
+            }
+            if (!callback.done.await(8, TimeUnit.SECONDS)) {
+                return result.put("status", "error").put("reason", "store_response_timed_out");
+            }
+            if (callback.error != null) {
+                return result.put("status", "error").put("reason", callback.error);
+            }
+            result.put("status", "success").put("recordType", recordType);
+            if (callback.responseBytes != null) {
+                result.put("responseBytesLength", callback.responseBytes.length);
+            }
+            return result;
+        } catch (Throwable error) {
+            Log.w(TAG, "health insert failed type=" + recordType, error);
+            try {
+                result.put("status", "error").put("reason", rootMessage(error));
+            } catch (Exception ignored) {}
+            return result;
+        }
+    }
+
+    JSONObject insertExerciseSession(long startTimeSeconds, long endTimeSeconds, long durationSeconds,
+                                     double calories, int avgHeartRate, int maxHeartRate,
+                                     int exerciseType, String packageName) {
+        try {
+            ClassLoader loader = loader();
+            Class<?> recordClass = Class.forName(
+                    PREFIX + "ExerciseSessionProto$ExerciseSessionRecord", true, loader);
+            Object recordBuilder = recordClass.getMethod("newBuilder").invoke(null);
+            invokeSetter(recordBuilder, "setStartTime", long.class, startTimeSeconds);
+            invokeSetter(recordBuilder, "setEndTime", long.class, endTimeSeconds);
+            invokeSetter(recordBuilder, "setExerciseDuration", long.class, durationSeconds);
+            invokeSetter(recordBuilder, "setCalories", double.class, calories);
+            invokeSetter(recordBuilder, "setAvgHeartRate", int.class, avgHeartRate);
+            invokeSetter(recordBuilder, "setMaxHeartRate", int.class, maxHeartRate);
+            invokeSetter(recordBuilder, "setExerciseType", int.class, exerciseType);
+            invokeSetter(recordBuilder, "setPackageName", String.class,
+                    packageName != null && !packageName.isEmpty() ? packageName : context.getPackageName());
+            invokeSetter(recordBuilder, "setDeviceId", String.class, "OWW221");
+
+            Object record = recordBuilder.getClass().getMethod("build").invoke(recordBuilder);
+
+            Class<?> recordsClass = Class.forName(
+                    PREFIX + "ExerciseSessionProto$ExerciseSessionRecords", true, loader);
+            Object recordsBuilder = recordsClass.getMethod("newBuilder").invoke(null);
+            recordsBuilder.getClass().getMethod("addItems", recordClass).invoke(recordsBuilder, record);
+            Object records = recordsBuilder.getClass().getMethod("build").invoke(recordsBuilder);
+            byte[] recordsBytes = (byte[]) records.getClass().getMethod("toByteArray").invoke(records);
+
+            return insertRecords("ExerciseSessionRecord", recordsBytes);
+        } catch (Throwable error) {
+            Log.w(TAG, "Unable to build or insert exercise session", error);
+            JSONObject err = new JSONObject();
+            try { err.put("status", "error").put("reason", rootMessage(error)); } catch (Exception ignored) {}
+            return err;
+        }
+    }
+
+    private static void invokeSetter(Object target, String name, Class<?> type, Object value) {
+        try {
+            Method method = target.getClass().getMethod(name, type);
+            method.invoke(target, value);
+        } catch (Throwable ignored) {}
+    }
+
+    private byte[] buildInsertRequest(ClassLoader loader, String recordType, byte[] recordsBytes)
+            throws Exception {
+        Class<?> proto = Class.forName(PREFIX + "StoreProto$InsertRecordsRequest", true, loader);
+        Object builder = proto.getMethod("newBuilder").invoke(null);
+        invoke(builder, "setType", String.class, recordType);
+        if (recordsBytes != null && recordsBytes.length > 0) {
+            Class<?> byteStringClass = Class.forName("com.google.protobuf.ByteString", true, loader);
+            Object byteString = byteStringClass.getMethod("copyFrom", byte[].class).invoke(null, recordsBytes);
+            builder.getClass().getMethod("setRecords", byteStringClass).invoke(builder, byteString);
+        }
+        Object built = builder.getClass().getMethod("build").invoke(builder);
+        return (byte[]) built.getClass().getMethod("toByteArray").invoke(built);
+    }
+
+    private static final class InsertCallback extends android.os.Binder {
+        final ClassLoader loader;
+        volatile byte[] responseBytes;
+        volatile String error;
+        final CountDownLatch done = new CountDownLatch(1);
+
+        InsertCallback(ClassLoader loader) {
+            this.loader = loader;
+            attachInterface(null, INSERT_CALLBACK_DESCRIPTOR);
+        }
+
+        @Override protected boolean onTransact(int code, Parcel data, Parcel reply, int flags)
+                throws RemoteException {
+            if (code == INTERFACE_TRANSACTION) {
+                reply.writeString(INSERT_CALLBACK_DESCRIPTOR);
+                return true;
+            }
+            data.enforceInterface(INSERT_CALLBACK_DESCRIPTOR);
             if (code == 1) {
                 if (data.readInt() != 0) responseBytes = data.createByteArray();
                 reply.writeNoException();
