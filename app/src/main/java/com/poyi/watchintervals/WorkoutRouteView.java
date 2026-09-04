@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.Typeface;
 import android.os.SystemClock;
 import android.view.Gravity;
@@ -18,6 +19,7 @@ import com.baidu.mapapi.map.MapStatusUpdate;
 import com.baidu.mapapi.map.MapStatusUpdateFactory;
 import com.baidu.mapapi.map.MapView;
 import com.baidu.mapapi.map.Marker;
+
 import com.baidu.mapapi.map.MarkerOptions;
 import com.baidu.mapapi.map.Polyline;
 import com.baidu.mapapi.map.PolylineOptions;
@@ -41,6 +43,7 @@ final class WorkoutRouteView extends FrameLayout {
     private static volatile boolean coordinateConversionAvailable = true;
 
     private final TextView empty;
+    private final VectorTrailCanvas vectorCanvas;
     private final ArrayList<LatLng> points = new ArrayList<>();
     private MapView mapView;
     private BaiduMap map;
@@ -65,19 +68,22 @@ final class WorkoutRouteView extends FrameLayout {
         setBackground(Ui.background(context, Color.rgb(18, 22, 23), Ui.RADIUS_ROUTE));
         setClipToOutline(true);
 
+        vectorCanvas = new VectorTrailCanvas(context);
+        vectorCanvas.setVisibility(View.GONE);
+        addView(vectorCanvas, new FrameLayout.LayoutParams(-1, -1));
+
         empty = new TextView(context);
-        empty.setText(BaiduMapRuntime.isConfigured()
-                ? "等待有效定位轨迹" : "地图授权待配置");
-        empty.setTextColor(Ui.MUTED);
-        empty.setTextSize(12);
-        empty.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        empty.setGravity(Gravity.CENTER);
-        empty.setBackground(Ui.background(context, Color.argb(230, 31, 35, 36), Ui.RADIUS_CARD));
         FrameLayout.LayoutParams emptyParams =
                 new FrameLayout.LayoutParams(-1, Ui.dp(context, 58), Gravity.CENTER);
         emptyParams.leftMargin = Ui.dp(context, 28);
         emptyParams.rightMargin = Ui.dp(context, 28);
         addView(empty, emptyParams);
+        empty.setText("等待有效定位轨迹");
+        empty.setTextColor(Ui.MUTED);
+        empty.setTextSize(12);
+        empty.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        empty.setGravity(Gravity.CENTER);
+        empty.setBackground(Ui.background(context, Color.argb(230, 31, 35, 36), Ui.RADIUS_CARD));
     }
 
     void setActive(boolean value) {
@@ -99,10 +105,6 @@ final class WorkoutRouteView extends FrameLayout {
     }
 
     void setEmptyMessage(String message) {
-        if (!BaiduMapRuntime.isConfigured()) {
-            empty.setText("地图授权待配置");
-            return;
-        }
         empty.setText(message == null || message.trim().isEmpty()
                 ? "等待有效定位轨迹" : message);
     }
@@ -124,8 +126,8 @@ final class WorkoutRouteView extends FrameLayout {
     private boolean ensureMapUnchecked() {
         if (mapView != null && !mapDestroyed) return true;
         if (!BaiduMapRuntime.initialize(getContext())) {
-            empty.setVisibility(View.VISIBLE);
-            empty.setText("地图授权待配置");
+            empty.setVisibility(points.isEmpty() ? View.VISIBLE : View.GONE);
+            empty.setText("等待有效定位轨迹");
             return false;
         }
         if (mapView != null) removeView(mapView);
@@ -194,13 +196,19 @@ final class WorkoutRouteView extends FrameLayout {
             return;
         }
 
-        if (!BaiduMapRuntime.isConfigured()) {
-            empty.setVisibility(View.VISIBLE);
-            empty.setText("地图授权待配置");
+        if (!BaiduMapRuntime.isConfigured() || mapUnavailable) {
+            empty.setVisibility(View.GONE);
+            vectorCanvas.setVisibility(View.VISIBLE);
+            vectorCanvas.setRoutePoints(points);
             return;
         }
         empty.setVisibility(View.GONE);
-        if (!active || !ensureMap()) return;
+        if (!active || !ensureMap()) {
+            vectorCanvas.setVisibility(View.VISIBLE);
+            vectorCanvas.setRoutePoints(points);
+            return;
+        }
+        vectorCanvas.setVisibility(View.GONE);
         applyRouteToMap(!canAppend);
     }
 
@@ -330,6 +338,8 @@ final class WorkoutRouteView extends FrameLayout {
         resumeMap();
     }
 
+
+
     @Override protected void onDetachedFromWindow() {
         attached = false;
         renderGeneration++;
@@ -345,5 +355,128 @@ final class WorkoutRouteView extends FrameLayout {
             endIcon = null;
         }
         super.onDetachedFromWindow();
+    }
+
+    private static final class VectorTrailCanvas extends View {
+        private final ArrayList<LatLng> routePoints = new ArrayList<>();
+        private final Paint bgGridPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint glowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint startPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint endPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint dotInnerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint badgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path path = new Path();
+
+        VectorTrailCanvas(Context context) {
+            super(context);
+            bgGridPaint.setColor(Color.argb(22, 255, 255, 255));
+            bgGridPaint.setStyle(Paint.Style.STROKE);
+            bgGridPaint.setStrokeWidth(Ui.dp(context, 1));
+
+            linePaint.setColor(Ui.LIME);
+            linePaint.setStyle(Paint.Style.STROKE);
+            linePaint.setStrokeWidth(Ui.dp(context, 3.2f));
+            linePaint.setStrokeCap(Paint.Cap.ROUND);
+            linePaint.setStrokeJoin(Paint.Join.ROUND);
+
+            glowPaint.setColor(Color.argb(55, 163, 230, 53));
+            glowPaint.setStyle(Paint.Style.STROKE);
+            glowPaint.setStrokeWidth(Ui.dp(context, 6.5f));
+            glowPaint.setStrokeCap(Paint.Cap.ROUND);
+            glowPaint.setStrokeJoin(Paint.Join.ROUND);
+
+            startPaint.setColor(Ui.CYAN);
+            startPaint.setStyle(Paint.Style.FILL);
+
+            endPaint.setColor(Ui.RED);
+            endPaint.setStyle(Paint.Style.FILL);
+
+            dotInnerPaint.setColor(Color.WHITE);
+            dotInnerPaint.setStyle(Paint.Style.FILL);
+
+            badgePaint.setColor(Ui.MUTED);
+            badgePaint.setTextSize(Ui.textPixels(context, 11f));
+            badgePaint.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        }
+
+        void setRoutePoints(ArrayList<LatLng> pts) {
+            routePoints.clear();
+            if (pts != null) routePoints.addAll(pts);
+            invalidate();
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            int w = getWidth(), h = getHeight();
+            if (w <= 0 || h <= 0) return;
+
+            int gridStep = Ui.dp(getContext(), 26);
+            for (int x = gridStep; x < w; x += gridStep) canvas.drawLine(x, 0, x, h, bgGridPaint);
+            for (int y = gridStep; y < h; y += gridStep) canvas.drawLine(0, y, w, y, bgGridPaint);
+
+            if (routePoints.isEmpty()) return;
+
+            int size = routePoints.size();
+            double minLat = Double.MAX_VALUE, maxLat = -Double.MAX_VALUE;
+            double minLon = Double.MAX_VALUE, maxLon = -Double.MAX_VALUE;
+            for (int i = 0; i < size; i++) {
+                LatLng p = routePoints.get(i);
+                if (p.latitude < minLat) minLat = p.latitude;
+                if (p.latitude > maxLat) maxLat = p.latitude;
+                if (p.longitude < minLon) minLon = p.longitude;
+                if (p.longitude > maxLon) maxLon = p.longitude;
+            }
+
+            float pad = Ui.dp(getContext(), 20);
+            float availW = Math.max(1, w - pad * 2);
+            float availH = Math.max(1, h - pad * 2);
+
+            double meanLat = (minLat + maxLat) / 2d;
+            double cosLat = Math.cos(Math.toRadians(meanLat));
+            double latSpan = Math.max(0.0001, maxLat - minLat);
+            double lonSpan = Math.max(0.0001, (maxLon - minLon) * Math.max(0.2, cosLat));
+
+            float scaleX = (float) (availW / lonSpan);
+            float scaleY = (float) (availH / latSpan);
+            float scale = Math.min(scaleX, scaleY);
+
+            float cx = pad + (availW - (float) (lonSpan * scale)) / 2f;
+            float cy = pad + (availH - (float) (latSpan * scale)) / 2f;
+
+            path.reset();
+            float startX = 0, startY = 0, endX = 0, endY = 0;
+
+            for (int i = 0; i < size; i++) {
+                LatLng p = routePoints.get(i);
+                float x = (float) (cx + (p.longitude - minLon) * cosLat * scale);
+                float y = (float) (cy + (maxLat - p.latitude) * scale);
+                if (i == 0) {
+                    path.moveTo(x, y);
+                    startX = x; startY = y;
+                } else {
+                    path.lineTo(x, y);
+                }
+                if (i == size - 1) {
+                    endX = x; endY = y;
+                }
+            }
+
+            if (size > 1) {
+                canvas.drawPath(path, glowPaint);
+                canvas.drawPath(path, linePaint);
+            }
+
+            float rOuter = Ui.dp(getContext(), 5.5f);
+            float rInner = Ui.dp(getContext(), 2.2f);
+            canvas.drawCircle(startX, startY, rOuter, startPaint);
+            canvas.drawCircle(startX, startY, rInner, dotInnerPaint);
+
+            if (size > 1) {
+                canvas.drawCircle(endX, endY, rOuter, endPaint);
+                canvas.drawCircle(endX, endY, rInner, dotInnerPaint);
+            }
+
+            canvas.drawText("GPS 矢量轨迹 · " + size + " 点", pad * 0.6f, pad * 0.8f, badgePaint);
+        }
     }
 }

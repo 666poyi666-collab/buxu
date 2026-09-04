@@ -153,18 +153,16 @@ public class HistoryActivity extends WatchActivity {
         }
 
         WorkoutRouteView route = new WorkoutRouteView(this);
-        // Match the stock record screen: build text/metrics first, then inflate the heavy map from
-        // idle so the detail transition is not blocked by tile setup and overlay allocation.
-        route.setActive(false);
+        route.setActive(true);
         double[] latitudes = new double[record.route.size()], longitudes = new double[record.route.size()];
         for (int index = 0; index < record.route.size(); index++) {
             latitudes[index] = record.route.get(index).getLatitude();
             longitudes[index] = record.route.get(index).getLongitude();
         }
         route.setRoute(latitudes, longitudes);
-        route.postDelayed(() -> {
-            if (route.isAttachedToWindow()) route.setActive(true);
-        }, 500L);
+        if (record.route.isEmpty()) {
+            route.setEmptyMessage("本记录未包含GPS轨迹");
+        }
         TextView routeTitle=Ui.bold(this,"运动轨迹",17,Ui.WHITE);LinearLayout.LayoutParams titleParams=new LinearLayout.LayoutParams(-1,Ui.dp(this,36));titleParams.topMargin=Ui.dp(this,10);page.addView(routeTitle,titleParams);
         // OWW221's stock sports record uses a compact 164dp map module. Keeping the same height
         // prevents the basemap from swallowing the detail page and makes roads/trail read at the
@@ -180,7 +178,10 @@ public class HistoryActivity extends WatchActivity {
                 for(int i=0;i<splits.length();i++){org.json.JSONObject split=splits.getJSONObject(i);card.addView(detailLine(split.optInt("index")+" 公里",Format.duration(split.optLong("durationMs"))+"  ·  "+SpeedFusion.formatPace(split.optLong("paceSecondsPerKm")),i==fastest&&splits.length()>1?Ui.LIME:Ui.WHITE));}page.addView(card,sectionParams());}
             if(json.has("heartRateRange")){org.json.JSONObject range=json.getJSONObject("heartRateRange");LinearLayout card=detailCard("心率");card.addView(detailLine("平均心率",record.averageHeartRate+" bpm"));card.addView(detailLine("实测范围",range.optInt("min")+"–"+range.optInt("max")+" bpm"));page.addView(card,sectionParams());}
             if(json.has("elevationGainMeters")){LinearLayout card=detailCard("海拔");card.addView(detailLine("累计爬升",Math.round(json.optDouble("elevationGainMeters"))+" m"));page.addView(card,sectionParams());}
-            org.json.JSONArray stages=json.optJSONArray("stageResults");if(stages!=null&&stages.length()>0){LinearLayout card=detailCard("训练阶段");for(int i=0;i<stages.length();i++){org.json.JSONObject stage=stages.getJSONObject(i);card.addView(detailLine(stage.optInt("index")+"  "+stage.optString("name"),Format.duration(stage.optLong("completedAtMs"))));}page.addView(card,sectionParams());}
+            org.json.JSONArray stages=json.optJSONArray("stageResults");
+            if(stages!=null&&stages.length()>0){
+                page.addView(buildStageBreakdownCard(record, stages), sectionParams());
+            }
         } catch(Exception ignored) {}
         TextView delete = Ui.iconAction(this, "删除本次记录", 15, Ui.RED, Ui.PANEL, Ui.Symbol.DELETE);
         deleteAction = delete;
@@ -279,6 +280,120 @@ public class HistoryActivity extends WatchActivity {
         else meta.append(" · ").append(record.steps).append(" 步");
         if (record.averageHeartRate > 0) meta.append(" · ").append(record.averageHeartRate).append(" bpm");
         return meta.toString();
+    }
+
+    private View buildStageBreakdownCard(WorkoutRecord record, org.json.JSONArray stages) {
+        LinearLayout card = Ui.card(this);
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = Ui.bold(this, "间歇阶段明细", 16, Ui.WHITE);
+        header.addView(title, new LinearLayout.LayoutParams(0, Ui.dp(this, 30), 1));
+        TextView count = Ui.text(this, "共 " + stages.length() + " 阶段", Ui.CAPTION, Ui.MUTED);
+        header.addView(count, new LinearLayout.LayoutParams(-2, Ui.dp(this, 30)));
+        card.addView(header);
+
+        long prevCompletedAtMs = 0;
+        double prevDistMeters = 0;
+
+        for (int i = 0; i < stages.length(); i++) {
+            org.json.JSONObject stage = stages.optJSONObject(i);
+            if (stage == null) continue;
+            int index = stage.optInt("index", i + 1);
+            String name = stage.optString("name", "阶段");
+            String unit = stage.optString("unit", "");
+            long target = stage.optLong("target", 0);
+            long completedAtMs = stage.optLong("completedAtMs", 0);
+            double totalDist = stage.optDouble("totalDistanceMeters", 0);
+
+            long stageDurationMs = stage.optLong("stageDurationMs", 0);
+            double stageDistMeters = stage.optDouble("stageDistanceMeters", 0);
+            int stageHeart = stage.optInt("stageAvgHeartRate", 0);
+            long stagePace = stage.optLong("stagePaceSecondsPerKm", 0);
+
+            if (stageDurationMs <= 0) {
+                stageDurationMs = Math.max(0, completedAtMs - prevCompletedAtMs);
+            }
+            if (stageDistMeters <= 0) {
+                stageDistMeters = Math.max(0, totalDist - prevDistMeters);
+            }
+            if (stagePace <= 0 && stageDistMeters >= 5 && stageDurationMs > 0) {
+                stagePace = Math.round(stageDurationMs / 1000d * 1000d / stageDistMeters);
+            }
+
+            if (stageHeart <= 0 && !record.heartTimes.isEmpty()) {
+                long segStart = record.startedAt + prevCompletedAtMs;
+                long segEnd = record.startedAt + completedAtMs;
+                int hSum = 0, hCount = 0;
+                for (int k = 0; k < Math.min(record.heartTimes.size(), record.heartValues.size()); k++) {
+                    long t = record.heartTimes.get(k);
+                    if (t >= segStart && t <= segEnd) {
+                        int val = record.heartValues.get(k);
+                        if (val >= 40 && val <= 220) {
+                            hSum += val;
+                            hCount++;
+                        }
+                    }
+                }
+                if (hCount > 0) stageHeart = Math.round((float) hSum / hCount);
+            }
+
+            prevCompletedAtMs = completedAtMs;
+            prevDistMeters = totalDist;
+
+            String targetDesc = "";
+            if (target > 0) {
+                if ("DISTANCE".equalsIgnoreCase(unit)) {
+                    targetDesc = target >= 1000 ? (target / 1000 + "km") : (target + "m");
+                } else if ("TIME".equalsIgnoreCase(unit)) {
+                    targetDesc = target >= 60 ? (target / 60 + "分") : (target + "秒");
+                }
+            }
+
+            boolean isRun = name.contains("跑");
+            int accentColor = isRun ? Ui.LIME : (name.contains("走") ? Ui.YELLOW : Ui.CYAN);
+
+            LinearLayout item = new LinearLayout(this);
+            item.setOrientation(LinearLayout.VERTICAL);
+            item.setPadding(0, Ui.dp(this, 6), 0, Ui.dp(this, 6));
+
+            LinearLayout row1 = new LinearLayout(this);
+            row1.setGravity(Gravity.CENTER_VERTICAL);
+            String label = index + ". " + name + (targetDesc.isEmpty() ? "" : " · " + targetDesc);
+            TextView left1 = Ui.bold(this, label, 14, accentColor);
+            row1.addView(left1, new LinearLayout.LayoutParams(0, -2, 1));
+
+            String distPaceStr = (stageDistMeters >= 1000
+                    ? String.format(Locale.CHINA, "%.2fkm", stageDistMeters / 1000d)
+                    : Math.round(stageDistMeters) + "m")
+                    + (stagePace > 0 ? "  " + SpeedFusion.formatPace(stagePace) : "");
+            TextView right1 = Ui.numeral(this, distPaceStr, 13, Ui.WHITE);
+            right1.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+            row1.addView(right1, new LinearLayout.LayoutParams(-2, -2));
+            item.addView(row1);
+
+            LinearLayout row2 = new LinearLayout(this);
+            row2.setGravity(Gravity.CENTER_VERTICAL);
+            TextView left2 = Ui.text(this, "用时 " + Format.duration(stageDurationMs), 12, Ui.MUTED);
+            row2.addView(left2, new LinearLayout.LayoutParams(0, -2, 1));
+
+            if (stageHeart > 0) {
+                TextView right2 = Ui.numeral(this, stageHeart + " bpm", 12, Ui.RED);
+                right2.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+                row2.addView(right2, new LinearLayout.LayoutParams(-2, -2));
+            }
+            item.addView(row2);
+
+            if (i < stages.length() - 1) {
+                View divider = new View(this);
+                divider.setBackgroundColor(0x15FFFFFF);
+                LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 1));
+                divParams.topMargin = Ui.dp(this, 5);
+                item.addView(divider, divParams);
+            }
+
+            card.addView(item);
+        }
+        return card;
     }
 
     private LinearLayout detailCard(String title){LinearLayout card=Ui.card(this);card.addView(Ui.bold(this,title,16,Ui.WHITE),new LinearLayout.LayoutParams(-1,Ui.dp(this,30)));return card;}

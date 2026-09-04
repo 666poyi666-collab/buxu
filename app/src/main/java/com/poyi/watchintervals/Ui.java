@@ -116,7 +116,7 @@ final class Ui {
         return Math.max(.90f, Math.min(maximum, requested));
     }
 
-    private static float textPixels(Context context, float sizeDp) {
+    static float textPixels(Context context, float sizeDp) {
         return sizeDp * scale(context) * textScale(context, sizeDp);
     }
 
@@ -175,7 +175,7 @@ final class Ui {
         TextView view = configureText(new MinimumTouchTargetTextView(context),
                 context, value, sizeDp, foreground);
         view.setTypeface(Typeface.create("sans", Typeface.BOLD));
-        view.setGravity(Gravity.CENTER);
+        view.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         view.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(45, 255, 255, 255)), background(context, background, RADIUS_CARD), null));
         view.setClickable(true);
         view.setFocusable(true);
@@ -192,6 +192,22 @@ final class Ui {
         return view;
     }
 
+    static TextView controlButton(Context context, String text, Symbol symbol, int symbolColor, int badgeColor) {
+        TextView view = action(context, text, 16, WHITE, PANEL);
+        view.setGravity(Gravity.CENTER_VERTICAL);
+        view.setPadding(dp(context, 16), 0, dp(context, 16), 0);
+        BadgeDrawable badge = new BadgeDrawable(context, symbol, symbolColor, badgeColor, 34);
+        view.setCompoundDrawablesRelativeWithIntrinsicBounds(badge, null, null, null);
+        view.setCompoundDrawablePadding(dp(context, 14));
+        return view;
+    }
+
+    static void updateControlButton(Context context, TextView view, String text, Symbol symbol, int symbolColor, int badgeColor) {
+        view.setText(text);
+        BadgeDrawable badge = new BadgeDrawable(context, symbol, symbolColor, badgeColor, 34);
+        view.setCompoundDrawablesRelativeWithIntrinsicBounds(badge, null, null, null);
+    }
+
     static void setActionSymbol(Context context, TextView view, Symbol symbol, int color) {
         Drawable icon = new SymbolDrawable(context, symbol, color);
         view.setCompoundDrawablesRelativeWithIntrinsicBounds(icon, null, null, null);
@@ -203,6 +219,61 @@ final class Ui {
         view.setBackground(new RippleDrawable(
                 ColorStateList.valueOf(Color.argb(45, 255, 255, 255)),
                 background(context, background, RADIUS_CARD), null));
+    }
+
+    private static final class BadgeDrawable extends Drawable {
+        private final int size;
+        private final Symbol symbol;
+        private final Paint bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint symbolPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path path = new Path();
+
+        BadgeDrawable(Context context, Symbol symbol, int symbolColor, int bgColor, int sizeDp) {
+            this.size = dp(context, sizeDp);
+            this.symbol = symbol;
+            bgPaint.setColor(bgColor);
+            bgPaint.setStyle(Paint.Style.FILL);
+            symbolPaint.setColor(symbolColor);
+            symbolPaint.setAntiAlias(true);
+        }
+
+        @Override public int getIntrinsicWidth() { return size; }
+        @Override public int getIntrinsicHeight() { return size; }
+
+        @Override public void draw(android.graphics.Canvas canvas) {
+            android.graphics.Rect b = getBounds();
+            float cx = b.exactCenterX(), cy = b.exactCenterY();
+            float radius = size / 2f;
+            canvas.drawCircle(cx, cy, radius, bgPaint);
+            float inner = size * 0.44f;
+            float left = cx - inner / 2f, top = cy - inner / 2f;
+            float width = inner, height = inner;
+            path.reset();
+            symbolPaint.setStyle(Paint.Style.FILL);
+            if (symbol == Symbol.PLAY) {
+                path.moveTo(left + width * 0.28f, top + height * 0.16f);
+                path.lineTo(left + width * 0.84f, cy);
+                path.lineTo(left + width * 0.28f, top + height * 0.84f);
+                path.close();
+                canvas.drawPath(path, symbolPaint);
+            } else if (symbol == Symbol.PAUSE) {
+                float barW = width * 0.26f;
+                canvas.drawRoundRect(left + width * 0.15f, top + height * 0.16f,
+                        left + width * 0.15f + barW, top + height * 0.84f, 3, 3, symbolPaint);
+                canvas.drawRoundRect(left + width * 0.59f, top + height * 0.16f,
+                        left + width * 0.59f + barW, top + height * 0.84f, 3, 3, symbolPaint);
+            } else if (symbol == Symbol.STOP) {
+                float pad = width * 0.14f;
+                canvas.drawRoundRect(left + pad, top + pad, left + width - pad, top + height - pad,
+                        4, 4, symbolPaint);
+            }
+        }
+
+        @Override public void setAlpha(int alpha) { bgPaint.setAlpha(alpha); symbolPaint.setAlpha(alpha); }
+        @Override public void setColorFilter(android.graphics.ColorFilter filter) {
+            bgPaint.setColorFilter(filter); symbolPaint.setColorFilter(filter);
+        }
+        @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
     }
 
     private static final class SymbolDrawable extends Drawable {
@@ -358,6 +429,26 @@ final class Ui {
             setMeasuredDimension(Math.max(getMeasuredWidth(), minimumTarget),
                     Math.max(getMeasuredHeight(), minimumTarget));
         }
+
+        @Override protected void onDraw(android.graphics.Canvas canvas) {
+            Drawable[] drawables = getCompoundDrawablesRelative();
+            Drawable left = drawables[0] != null ? drawables[0] : getCompoundDrawables()[0];
+            int iconWidth = left != null ? left.getIntrinsicWidth() : 0;
+            int pad = (left != null && iconWidth > 0) ? getCompoundDrawablePadding() : 0;
+            CharSequence text = getText();
+            float textWidth = (text != null && text.length() > 0) ? getPaint().measureText(text.toString()) : 0f;
+            float contentWidth = iconWidth + (textWidth > 0 && iconWidth > 0 ? pad : 0) + textWidth;
+            int totalWidth = getWidth();
+            if (contentWidth > 0 && totalWidth > contentWidth) {
+                float dx = (totalWidth - contentWidth) / 2f - getPaddingLeft();
+                canvas.save();
+                canvas.translate(dx, 0);
+                super.onDraw(canvas);
+                canvas.restore();
+                return;
+            }
+            super.onDraw(canvas);
+        }
     }
 
     /** One-shot entrance for countdown figures and transient workout cards. */
@@ -380,6 +471,46 @@ final class Ui {
         return view;
     }
 
+    static void playChime(boolean completion) {
+        new Thread(() -> {
+            try {
+                int sampleRate = 22050;
+                int f1 = completion ? 784 : 659;
+                int f2 = completion ? 1046 : 880;
+                int dur1 = (int) (sampleRate * 0.10);
+                int dur2 = (int) (sampleRate * 0.18);
+                int total = dur1 + dur2;
+                short[] buffer = new short[total];
+                for (int i = 0; i < dur1; i++) {
+                    double t = (double) i / sampleRate;
+                    double env = Math.sin(Math.PI * i / dur1);
+                    buffer[i] = (short) (Math.sin(2 * Math.PI * f1 * t) * env * 22000);
+                }
+                for (int i = 0; i < dur2; i++) {
+                    double t = (double) i / sampleRate;
+                    double env = Math.sin(Math.PI * i / dur2);
+                    buffer[dur1 + i] = (short) (Math.sin(2 * Math.PI * f2 * t) * env * 24000);
+                }
+                android.media.AudioAttributes attr = new android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build();
+                android.media.AudioFormat format = new android.media.AudioFormat.Builder()
+                        .setSampleRate(sampleRate)
+                        .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                        .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO)
+                        .build();
+                android.media.AudioTrack track = new android.media.AudioTrack(attr, format,
+                        buffer.length * 2, android.media.AudioTrack.MODE_STATIC,
+                        android.media.AudioManager.AUDIO_SESSION_ID_GENERATE);
+                track.write(buffer, 0, buffer.length);
+                track.play();
+                try { Thread.sleep((long) ((total / (double) sampleRate) * 1000) + 40); } catch (Exception ignored) {}
+                track.release();
+            } catch (Exception ignored) {}
+        }).start();
+    }
+
     /**
      * Apple-style metric cell: semantic label first, large tabular figure below, small unit on
      * the same baseline. The caller receives the figure so the one-second refresh only updates
@@ -396,18 +527,21 @@ final class Ui {
         cell.setOrientation(LinearLayout.VERTICAL);
         if (asCard) {
             cell.setBackground(background(context, PANEL, RADIUS_CARD));
-            cell.setPadding(dp(context, 7), dp(context, 3), dp(context, 7), dp(context, 3));
+            cell.setPadding(dp(context, 7), dp(context, 2), dp(context, 7), dp(context, 2));
         }
         TextView caption = bold(context, label, asCard ? 10 : LABEL, color);
-        cell.addView(caption, new LinearLayout.LayoutParams(-1, dp(context, asCard ? 15 : 18)));
+        cell.addView(caption, new LinearLayout.LayoutParams(-1, dp(context, asCard ? 14 : 18)));
         LinearLayout figure = new LinearLayout(context);
         figure.setGravity(Gravity.BOTTOM);
         TextView value = numeral(context, initial, figureSize, color);
-        figure.addView(value, new LinearLayout.LayoutParams(-2, -1));
+        value.setIncludeFontPadding(false);
+        figure.addView(value, new LinearLayout.LayoutParams(-2, -2));
         if (unit != null && !unit.isEmpty()) {
             TextView suffix = text(context, unit, asCard ? 10 : LABEL, MUTED);
-            LinearLayout.LayoutParams suffixParams = new LinearLayout.LayoutParams(-2, -1);
-            suffixParams.leftMargin = dp(context, 4);
+            suffix.setIncludeFontPadding(false);
+            LinearLayout.LayoutParams suffixParams = new LinearLayout.LayoutParams(-2, -2);
+            suffixParams.leftMargin = dp(context, 3);
+            suffixParams.bottomMargin = dp(context, 1);
             figure.addView(suffix, suffixParams);
         }
         cell.addView(figure, new LinearLayout.LayoutParams(-1, 0, 1));

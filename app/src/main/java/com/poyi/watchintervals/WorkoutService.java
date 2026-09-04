@@ -19,8 +19,6 @@ import android.location.GnssStatus;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
-import android.media.AudioManager;
-import android.media.ToneGenerator;
 import android.graphics.PixelFormat;
 import android.os.Binder;
 import android.os.Bundle;
@@ -89,8 +87,10 @@ public class WorkoutService extends Service implements LocationListener, SensorE
     private final LocalBinder binder = new LocalBinder();
     private ArrayList<Stage> stages = new ArrayList<>();
     private int stageIndex = 0;
-    private double totalMeters = 0, stageMeters = 0;
+    private double totalMeters = 0, stageMeters = 0, stageActualMeters = 0;
     private long activeMillis = 0, stageMillis = 0, lastTick = 0, pausedDurationMs = 0, pauseStartedWall = 0;
+    private long stageActualDurationMs = 0, stageHeartSum = 0;
+    private int stageHeartCount = 0;
     private long workoutStartedAt = 0, heartRateTotal = 0;
     private long planCompletedActiveMs = 0, planCompletedWallTime = 0;
     private int heartRateSamples = 0;
@@ -193,8 +193,6 @@ public class WorkoutService extends Service implements LocationListener, SensorE
     private View surfaceRestoreOverlay;
     private Runnable automaticSurfaceRestore;
     private final Handler clockHandler = new Handler(Looper.getMainLooper());
-    private ToneGenerator cueTone;
-    private final Runnable releaseCueTone = this::releaseCueTone;
     private WorkoutVoiceSpeaker voiceSpeaker;
     private Runnable pendingVoiceCue;
     private int preannouncedStageIndex = -1;
@@ -620,6 +618,10 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         stageMeters = 0;
         activeMillis = 0;
         stageMillis = 0;
+        stageActualDurationMs = 0;
+        stageActualMeters = 0;
+        stageHeartSum = 0;
+        stageHeartCount = 0;
         paused = false;
         planCompleted = false;
         running = true;
@@ -1218,6 +1220,7 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         if (running && !paused && lastTick > 0) {
             long delta = Math.max(0, now - lastTick);
             activeMillis += delta;
+            if (!planCompleted) stageActualDurationMs += delta;
             if (!planCompleted && currentStage().unit == Stage.Unit.TIME) {
                 long needed = Math.max(0, currentStage().target * 1000L - stageMillis);
                 stageMillis += Math.min(delta, needed);
@@ -1248,7 +1251,14 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         }
         if (metrics.heartRate >= MIN_HEART_RATE && metrics.heartRate <= MAX_HEART_RATE) {
             heartRate = metrics.heartRate;
-            if (running && !paused) { heartRateTotal += metrics.heartRate; heartRateSamples++; }
+            if (running && !paused) {
+                heartRateTotal += metrics.heartRate;
+                heartRateSamples++;
+                if (!planCompleted) {
+                    stageHeartSum += metrics.heartRate;
+                    stageHeartCount++;
+                }
+            }
             lastHeartRateElapsed = lastSystemMetricElapsed;
             lastHeartSensorEventElapsed = lastSystemMetricElapsed;
             recordHeartSample(metrics.heartRate);
@@ -1515,6 +1525,7 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         metrics.add(SystemClock.elapsedRealtime(), meters, source);
         recordSourceTransition(source);
         if (planCompleted) { totalMeters += meters; freeRecordingDistanceMeters += meters; return; }
+        stageActualMeters += meters;
         double remainingDelta = meters;
         while (remainingDelta > 0d && !planCompleted && currentStage().unit == Stage.Unit.DISTANCE) {
             double needed = Math.max(0d, currentStage().target - stageMeters);
@@ -1554,9 +1565,26 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         Stage stage = currentStage();
         boolean reached = stage.unit == Stage.Unit.DISTANCE ? stageMeters >= stage.target : stageMillis >= stage.target * 1000L;
         if (!reached) return;
-        try { completedStageResults.put(new org.json.JSONObject().put("index", stageIndex + 1).put("name", stage.name())
-                .put("unit", stage.unit.name()).put("target", stage.target).put("completedAtMs", activeMillis)
-                .put("totalDistanceMeters", Math.round(totalMeters * 10d) / 10d)); } catch (Exception ignored) {}
+        try {
+            int stageAvgHr = stageHeartCount > 0 ? (int) Math.round((double) stageHeartSum / stageHeartCount) : 0;
+            long stagePace = (stageActualMeters >= 5 && stageActualDurationMs > 0)
+                    ? Math.round(stageActualDurationMs / 1000d * 1000d / stageActualMeters) : 0;
+            completedStageResults.put(new org.json.JSONObject()
+                    .put("index", stageIndex + 1)
+                    .put("name", stage.name())
+                    .put("unit", stage.unit.name())
+                    .put("target", stage.target)
+                    .put("completedAtMs", activeMillis)
+                    .put("totalDistanceMeters", Math.round(totalMeters * 10d) / 10d)
+                    .put("stageDurationMs", stageActualDurationMs)
+                    .put("stageDistanceMeters", Math.round(stageActualMeters * 10d) / 10d)
+                    .put("stageAvgHeartRate", stageAvgHr)
+                    .put("stagePaceSecondsPerKm", stagePace));
+        } catch (Exception ignored) {}
+        stageActualDurationMs = 0;
+        stageActualMeters = 0;
+        stageHeartSum = 0;
+        stageHeartCount = 0;
         stageIndex++;
         if (stageIndex >= stages.size()) {
             stageIndex = stages.size() - 1;
@@ -1612,28 +1640,11 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         if (voiceSpeaker != null) voiceSpeaker.stop();
     }
 
-    /** A short audio/haptic signal replaces the old stacked, second-long vibration sequence. */
+    /** A short chime and crisp haptic signal replace telephone tone beeps. */
     private void playStageCue(boolean planCompleted) {
         WorkoutUxPolicy.Cue cue = WorkoutUxPolicy.cue(planCompleted);
         vibrate(cue.vibrationPattern());
-        clockHandler.removeCallbacks(releaseCueTone);
-        releaseCueTone();
-        try {
-            cueTone = new ToneGenerator(AudioManager.STREAM_NOTIFICATION, cue.toneVolumePercent);
-            int tone = planCompleted ? ToneGenerator.TONE_PROP_ACK : ToneGenerator.TONE_PROP_PROMPT;
-            cueTone.startTone(tone, cue.toneDurationMillis);
-            clockHandler.postDelayed(releaseCueTone, cue.toneDurationMillis + 80L);
-        } catch (RuntimeException error) {
-            releaseCueTone();
-            android.util.Log.w("WorkoutService", "Unable to play stage cue", error);
-        }
-    }
-
-    private void releaseCueTone() {
-        if (cueTone == null) return;
-        try { cueTone.release(); }
-        catch (RuntimeException error) { android.util.Log.w("WorkoutService", "Unable to release stage cue", error); }
-        cueTone = null;
+        Ui.playChime(planCompleted);
     }
 
     private void vibrate(long[] pattern) {
@@ -1851,8 +1862,6 @@ public class WorkoutService extends Service implements LocationListener, SensorE
         removeSurfaceRestoreOverlay();
         saveSession(true);
         clockHandler.removeCallbacks(clock);
-        clockHandler.removeCallbacks(releaseCueTone);
-        releaseCueTone();
         stopVoiceCue();
         if (voiceSpeaker != null) {
             voiceSpeaker.close();

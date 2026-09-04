@@ -207,14 +207,14 @@ public class TrainingActivity extends WatchActivity {
 
         LinearLayout row1 = new LinearLayout(this);
         row1.setGravity(Gravity.CENTER_VERTICAL);
-        stageHeart = Ui.metricCell(this, row1, "心率", "--", "次/分", Ui.RED, 26, true);
-        stagePace = Ui.metricCell(this, row1, "配速", "--", "/公里", Ui.CYAN, 26, true);
+        stageHeart = Ui.metricCell(this, row1, "心率", "--", "次/分", Ui.RED, 30, true);
+        stagePace = Ui.metricCell(this, row1, "配速", "--", "/公里", Ui.CYAN, 30, true);
         deck.addView(row1, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         LinearLayout row2 = new LinearLayout(this);
         row2.setGravity(Gravity.CENTER_VERTICAL);
-        stageDistance = Ui.metricCell(this, row2, "距离", "0.00", "公里", Ui.LIME, 26, true);
-        stageCalories = Ui.metricCell(this, row2, "热量", "0", "千卡", Ui.AMBER, 26, true);
+        stageDistance = Ui.metricCell(this, row2, "距离", "0.00", "公里", Ui.LIME, 30, true);
+        stageCalories = Ui.metricCell(this, row2, "热量", "0", "千卡", Ui.AMBER, 30, true);
         LinearLayout.LayoutParams row2Params = new LinearLayout.LayoutParams(-1, 0, 1f);
         row2Params.topMargin = Ui.dp(this, 3);
         deck.addView(row2, row2Params);
@@ -341,14 +341,14 @@ public class TrainingActivity extends WatchActivity {
         page.setBackgroundColor(Ui.BLACK);
 
         LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(Ui.workoutGlyph(this, Ui.RED),
+        header.addView(Ui.workoutGlyph(this, Ui.LIME),
                 new LinearLayout.LayoutParams(Ui.dp(this, 28), Ui.dp(this, 28)));
-        TextView title = Ui.bold(this, "训练控制", 16, Ui.WHITE);
+        TextView title = Ui.bold(this, "训练控制", 17, Ui.WHITE);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, -1, 1);
         titleParams.leftMargin = Ui.dp(this, 8); header.addView(title, titleParams);
         controlState = Ui.chip(this, "训练中", Ui.LIME, Ui.TINT_LIME);
         header.addView(controlState, new LinearLayout.LayoutParams(Ui.dp(this, 78), Ui.dp(this, 24)));
-        page.addView(header, new LinearLayout.LayoutParams(-1, Ui.dp(this, 30)));
+        page.addView(header, new LinearLayout.LayoutParams(-1, Ui.dp(this, 32)));
 
         LinearLayout heroCard = new LinearLayout(this);
         heroCard.setOrientation(LinearLayout.VERTICAL);
@@ -360,7 +360,7 @@ public class TrainingActivity extends WatchActivity {
         durationCaption.setGravity(Gravity.CENTER);
         heroCard.addView(durationCaption, new LinearLayout.LayoutParams(-1, Ui.dp(this, 16)));
 
-        controlDuration = Ui.numeral(this, "00:00", 48, Ui.WHITE);
+        controlDuration = Ui.numeral(this, "00:00", 44, Ui.WHITE);
         controlDuration.setGravity(Gravity.CENTER);
         heroCard.addView(controlDuration, new LinearLayout.LayoutParams(-1, -2));
 
@@ -370,7 +370,7 @@ public class TrainingActivity extends WatchActivity {
         summaryParams.topMargin = Ui.dp(this, 2);
         heroCard.addView(controlSummary, summaryParams);
 
-        LinearLayout.LayoutParams heroParams = new LinearLayout.LayoutParams(-1, 0, 1.25f);
+        LinearLayout.LayoutParams heroParams = new LinearLayout.LayoutParams(-1, 0, 1.2f);
         heroParams.topMargin = Ui.dp(this, 4);
         heroParams.bottomMargin = Ui.dp(this, 6);
         page.addView(heroCard, heroParams);
@@ -380,7 +380,7 @@ public class TrainingActivity extends WatchActivity {
         pauseParams.bottomMargin = Ui.dp(this, 6);
         page.addView(pause, pauseParams);
 
-        stop = Ui.iconAction(this, "结束训练", 16, Ui.RED, Ui.PANEL, Ui.Symbol.STOP);
+        stop = Ui.iconAction(this, "结束训练", 16, Ui.WHITE, Ui.RED, Ui.Symbol.STOP);
         LinearLayout.LayoutParams stopParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
         page.addView(stop, stopParams);
 
@@ -396,7 +396,7 @@ public class TrainingActivity extends WatchActivity {
         if (!pauseStyleInitialized || displayedPauseStyle != paused) {
             displayedPauseStyle = paused;
             pauseStyleInitialized = true;
-            Ui.styleAction(this, pause, Ui.BLACK, paused ? Ui.GREEN : Ui.YELLOW);
+            Ui.styleAction(this, pause, Ui.BLACK, paused ? Ui.LIME : Ui.YELLOW);
             Ui.setActionSymbol(this, pause, paused ? Ui.Symbol.PLAY : Ui.Symbol.PAUSE, Ui.BLACK);
         }
         if (stop.getVisibility() != View.VISIBLE) stop.setVisibility(View.VISIBLE);
@@ -517,14 +517,14 @@ public class TrainingActivity extends WatchActivity {
         panel.setVisibility(View.GONE);
         panel.setFocusable(true);
         panel.setAccessibilityPaneTitle("结束训练确认");
-        TextView title = Ui.bold(this, "结束本次训练？", 19, Ui.WHITE);
-        panel.addView(title, new LinearLayout.LayoutParams(-1, Ui.dp(this, 30)));
-        TextView hint = Ui.text(this, "记录会立即停止", 12, Ui.MUTED);
-        panel.addView(hint, new LinearLayout.LayoutParams(-1, Ui.dp(this, 24)));
+        TextView title = Ui.bold(this, "结束本次训练？", 18, Ui.WHITE);
+        panel.addView(title, new LinearLayout.LayoutParams(-1, Ui.dp(this, 28)));
+        TextView hint = Ui.text(this, "训练数据将自动保存至历史记录", 12, Ui.MUTED);
+        panel.addView(hint, new LinearLayout.LayoutParams(-1, Ui.dp(this, 22)));
         LinearLayout choices = new LinearLayout(this);
         TextView cancel = Ui.iconAction(this, "继续训练", 15, Ui.BLACK, Ui.LIME, Ui.Symbol.PLAY);
         stopCancel = cancel;
-        TextView confirm = Ui.iconAction(this, "结束", 15, Ui.WHITE, Ui.RED, Ui.Symbol.STOP);
+        TextView confirm = Ui.iconAction(this, "确认结束", 15, Ui.WHITE, Ui.RED, Ui.Symbol.STOP);
         LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(0, Ui.dp(this, 46), 1);
         cancelParams.rightMargin = Ui.dp(this, 7);
         choices.addView(cancel, cancelParams);
@@ -772,8 +772,9 @@ public class TrainingActivity extends WatchActivity {
                                 : Ui.TINT_LIME, 14));
             }
             Ui.setTextIfChanged(controlDuration, Format.duration(s.activeMillis));
-            Ui.setTextIfChanged(controlSummary, Format.distance(s.totalMeters)
-                    + (s.heartRate > 0 ? " · " + s.heartRate + " bpm" : ""));
+            Ui.setTextIfChanged(controlSummary, String.format(Locale.CHINA, "%.2f 公里 · %d 千卡%s",
+                    Math.max(0d, s.totalMeters) / 1000d, s.live.calories,
+                    s.heartRate > 0 ? " · " + s.heartRate + " bpm" : ""));
             setControlsForCompletion(s.paused);
         }
 
@@ -932,6 +933,9 @@ public class TrainingActivity extends WatchActivity {
         // The binding may disappear briefly while Android reconnects the Activity. Always send
         // the command to the state owner instead of closing the UI and leaving the workout alive.
         startService(new Intent(this, WorkoutService.class).setAction(WorkoutService.ACTION_STOP));
+        Intent home = new Intent(this, MainActivity.class);
+        home.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(home);
         finish();
     }
     @Override public void onBackPressed() {

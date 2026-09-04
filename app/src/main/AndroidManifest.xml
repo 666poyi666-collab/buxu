@@ -54,7 +54,7 @@
         <activity
             android:name=".HistoryActivity"
             android:screenOrientation="portrait"
-                        android:exported="false"
+            android:exported="true"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:alwaysRetainTaskState="true" />
@@ -62,7 +62,7 @@
             android:name=".TrainingActivity"
             android:launchMode="singleTop"
             android:screenOrientation="portrait"
-                        android:exported="false"
+            android:exported="true"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:alwaysRetainTaskState="true" />

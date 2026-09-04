@@ -29,7 +29,10 @@ final class WorkoutVoiceCuePolicy {
     private WorkoutVoiceCuePolicy() {}
 
     static String stageAnnouncement(int stageNumber, Stage stage) {
-        return "第" + Math.max(1, stageNumber) + "阶段，" + stage.name() + spokenTarget(stage);
+        if (stageNumber <= 1) {
+            return "训练开始，第1阶段，" + stage.name() + spokenTarget(stage);
+        }
+        return "第" + stageNumber + "阶段，" + stage.name() + spokenTarget(stage);
     }
 
     static String upcomingAnnouncement(Stage current, double stageMeters,
