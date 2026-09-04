@@ -387,22 +387,36 @@ final class Ui {
      */
     static TextView metricCell(Context context, LinearLayout row, String label, String initial,
                                String unit, int color, float figureSize) {
+        return metricCell(context, row, label, initial, unit, color, figureSize, false);
+    }
+
+    static TextView metricCell(Context context, LinearLayout row, String label, String initial,
+                               String unit, int color, float figureSize, boolean asCard) {
         LinearLayout cell = new LinearLayout(context);
         cell.setOrientation(LinearLayout.VERTICAL);
-        TextView caption = bold(context, label, LABEL, color);
-        cell.addView(caption, new LinearLayout.LayoutParams(-1, dp(context, 18)));
+        if (asCard) {
+            cell.setBackground(background(context, PANEL, RADIUS_CARD));
+            cell.setPadding(dp(context, 7), dp(context, 3), dp(context, 7), dp(context, 3));
+        }
+        TextView caption = bold(context, label, asCard ? 10 : LABEL, color);
+        cell.addView(caption, new LinearLayout.LayoutParams(-1, dp(context, asCard ? 15 : 18)));
         LinearLayout figure = new LinearLayout(context);
         figure.setGravity(Gravity.BOTTOM);
         TextView value = numeral(context, initial, figureSize, color);
         figure.addView(value, new LinearLayout.LayoutParams(-2, -1));
         if (unit != null && !unit.isEmpty()) {
-            TextView suffix = text(context, unit, LABEL, MUTED);
+            TextView suffix = text(context, unit, asCard ? 10 : LABEL, MUTED);
             LinearLayout.LayoutParams suffixParams = new LinearLayout.LayoutParams(-2, -1);
-            suffixParams.leftMargin = dp(context, 5);
+            suffixParams.leftMargin = dp(context, 4);
             figure.addView(suffix, suffixParams);
         }
         cell.addView(figure, new LinearLayout.LayoutParams(-1, 0, 1));
-        row.addView(cell, new LinearLayout.LayoutParams(0, -1, 1));
+        LinearLayout.LayoutParams cellParams = new LinearLayout.LayoutParams(0, -1, 1);
+        if (asCard) {
+            cellParams.leftMargin = dp(context, 2);
+            cellParams.rightMargin = dp(context, 2);
+        }
+        row.addView(cell, cellParams);
         return value;
     }
 

@@ -164,7 +164,7 @@ public class TrainingActivity extends WatchActivity {
     private LinearLayout buildDataPage() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 4), Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 2));
+        root.setPadding(Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 3), Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 4));
         root.setBackgroundColor(Ui.BLACK);
 
         LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
@@ -172,7 +172,7 @@ public class TrainingActivity extends WatchActivity {
         top.addView(section, new LinearLayout.LayoutParams(0, -1, 1));
         stageCounter = Ui.chip(this, "第 1/2 项", Ui.LIME, Ui.TINT_LIME);
         top.addView(stageCounter, new LinearLayout.LayoutParams(Ui.dp(this, 84), Ui.dp(this, 22)));
-        root.addView(top, new LinearLayout.LayoutParams(-1, Ui.dp(this, 22)));
+        root.addView(top, new LinearLayout.LayoutParams(-1, Ui.dp(this, 24)));
 
         FrameLayout stadiumBox = new FrameLayout(this);
         ring = new Ui.Ring(this);
@@ -182,41 +182,44 @@ public class TrainingActivity extends WatchActivity {
         center.setOrientation(LinearLayout.VERTICAL);
         center.setGravity(Gravity.CENTER);
 
-        stageName = Ui.bold(this, "准备", 16, Ui.LIME);
+        stageName = Ui.bold(this, "准备", 18, Ui.LIME);
         stageName.setGravity(Gravity.CENTER);
         stageName.setSingleLine(true);
         center.addView(stageName, new LinearLayout.LayoutParams(-2, -2));
 
-        remaining = Ui.numeral(this, "--", 56, Ui.WHITE);
+        remaining = Ui.numeral(this, "--", 60, Ui.WHITE);
         remaining.setGravity(Gravity.CENTER);
         center.addView(remaining, new LinearLayout.LayoutParams(-2, -2));
 
-        remainingLabel = Ui.bold(this, "剩余距离", 10, Ui.MUTED);
+        remainingLabel = Ui.bold(this, "剩余距离", 12, Ui.MUTED);
         remainingLabel.setGravity(Gravity.CENTER);
         center.addView(remainingLabel, new LinearLayout.LayoutParams(-2, -2));
 
         stadiumBox.addView(center, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
-        root.addView(stadiumBox, new LinearLayout.LayoutParams(-1, Ui.dp(this, 124)));
+        LinearLayout.LayoutParams stadiumParams = new LinearLayout.LayoutParams(-1, 0, 1.18f);
+        stadiumParams.topMargin = Ui.dp(this, 2);
+        stadiumParams.bottomMargin = Ui.dp(this, 4);
+        root.addView(stadiumBox, stadiumParams);
 
         LinearLayout deck = new LinearLayout(this);
         deck.setOrientation(LinearLayout.VERTICAL);
 
         LinearLayout row1 = new LinearLayout(this);
         row1.setGravity(Gravity.CENTER_VERTICAL);
-        stageHeart = Ui.metricCell(this, row1, "心率", "--", "次/分", Ui.RED, Ui.STAGE_METRIC_FIGURE);
-        stagePace = Ui.metricCell(this, row1, "配速", "--", "/公里", Ui.CYAN, Ui.STAGE_METRIC_FIGURE);
-        deck.addView(row1, new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.STAGE_METRIC_ROW)));
+        stageHeart = Ui.metricCell(this, row1, "心率", "--", "次/分", Ui.RED, 26, true);
+        stagePace = Ui.metricCell(this, row1, "配速", "--", "/公里", Ui.CYAN, 26, true);
+        deck.addView(row1, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         LinearLayout row2 = new LinearLayout(this);
         row2.setGravity(Gravity.CENTER_VERTICAL);
-        stageDistance = Ui.metricCell(this, row2, "距离", "0.00", "公里", Ui.LIME, Ui.STAGE_METRIC_FIGURE);
-        stageCalories = Ui.metricCell(this, row2, "热量", "0", "千卡", Ui.AMBER, Ui.STAGE_METRIC_FIGURE);
-        LinearLayout.LayoutParams row2Params = new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.STAGE_METRIC_ROW));
-        row2Params.topMargin = Ui.dp(this, Ui.STAGE_METRIC_GAP);
+        stageDistance = Ui.metricCell(this, row2, "距离", "0.00", "公里", Ui.LIME, 26, true);
+        stageCalories = Ui.metricCell(this, row2, "热量", "0", "千卡", Ui.AMBER, 26, true);
+        LinearLayout.LayoutParams row2Params = new LinearLayout.LayoutParams(-1, 0, 1f);
+        row2Params.topMargin = Ui.dp(this, 3);
         deck.addView(row2, row2Params);
 
-        LinearLayout.LayoutParams deckParams = new LinearLayout.LayoutParams(-1, -2);
-        deckParams.topMargin = Ui.dp(this, 8);
+        LinearLayout.LayoutParams deckParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
+        deckParams.bottomMargin = Ui.dp(this, 2);
         root.addView(deck, deckParams);
 
         stageProgress = Ui.text(this, "", Ui.LABEL, Ui.MUTED);
