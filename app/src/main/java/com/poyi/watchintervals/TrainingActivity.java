@@ -1,9 +1,10 @@
 package com.poyi.watchintervals;
 
-import android.app.Activity;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -534,26 +535,111 @@ public class TrainingActivity extends WatchActivity {
         return panel;
     }
 
-    @Override public void onStart() { super.onStart(); bound = bindService(new Intent(this, WorkoutService.class), connection, Context.BIND_AUTO_CREATE); handler.post(update); }
+    private static boolean debugMockEnabled = false;
+
+    private final BroadcastReceiver debugMockReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if ("com.poyi.watchintervals.DEBUG_MOCK_DATA".equals(intent.getAction())) {
+                debugMockEnabled = intent.getBooleanExtra("enable", true);
+                if (intent.hasExtra("page") && workoutPager != null) {
+                    int targetPage = intent.getIntExtra("page", STAGE_PAGE);
+                    workoutPager.setCurrentItem(targetPage, false);
+                }
+                if (debugMockEnabled) {
+                    renderMockSnapshot();
+                } else {
+                    refresh();
+                }
+            }
+        }
+    };
+
+    @Override public void onStart() {
+        super.onStart();
+        bound = bindService(new Intent(this, WorkoutService.class), connection, Context.BIND_AUTO_CREATE);
+        try { registerReceiver(debugMockReceiver, new IntentFilter("com.poyi.watchintervals.DEBUG_MOCK_DATA")); } catch (Exception ignored) {}
+        handler.post(update);
+    }
+
     @Override public void onStop() {
         handler.removeCallbacks(update);
         handler.removeCallbacks(hideTransition);
         handler.removeCallbacks(hideSplit);
-        // Removing a delayed callback must also clear its transient view. Otherwise a screen-off
-        // during the 1.8 s card leaves that card visible forever when the same Activity resumes.
         hideTransition.run();
         hideSplit.run();
-        // Stage/lap changes continue in WorkoutService while this presentation is stopped. The
-        // first snapshot after resume is a baseline, not a reason to replay those old cards.
         transientCueTracker.reset();
+        try { unregisterReceiver(debugMockReceiver); } catch (Exception ignored) {}
         if (bound) { unbindService(connection); bound = false; service = null; }
         super.onStop();
     }
 
+    private void renderMockSnapshot() {
+        int accent = Ui.CYAN;
+        // 1. 阶段进度页 (dataPage / STAGE_PAGE)
+        Ui.setTextIfChanged(stageName, "快走");
+        Ui.setTextColorIfChanged(stageName, accent);
+        Ui.setTextIfChanged(stageCounter, "第 2/3 项");
+        Ui.setTextColorIfChanged(stageCounter, accent);
+        stageCounter.setBackground(Ui.background(this,
+                Color.argb(45, Color.red(accent), Color.green(accent), Color.blue(accent)), 14));
+        Ui.setTextIfChanged(remainingLabel, "剩余时间");
+        Ui.setTextIfChanged(remaining, "04:28");
+        Ui.setTextIfChanged(stageHeart, "158");
+        Ui.setTextColorIfChanged(stageHeart, Ui.RED);
+        if (stagePace != null) {
+            Ui.setTextIfChanged(stagePace, "5'12\"");
+            Ui.setTextColorIfChanged(stagePace, Ui.CYAN);
+        }
+        Ui.setTextIfChanged(stageDistance, "3.45");
+        Ui.setTextIfChanged(stageCalories, "215");
+        if (ring != null) ring.set(0.65f, accent);
+
+        // 2. 间歇训练仪表页 (corePage / CORE_PAGE)
+        Ui.setTextIfChanged(coreHeader, "快走 · 第 2/3 项");
+        Ui.setTextColorIfChanged(coreHeader, accent);
+        Ui.setTextIfChanged(trainClock, clockFormat.format(new java.util.Date()));
+        Ui.setTextIfChanged(distance, "3.45");
+        Ui.setTextIfChanged(pace, "5'12\"");
+        Ui.setTextColorIfChanged(pace, Ui.CYAN);
+        Ui.setTextIfChanged(heart, "158");
+        Ui.setTextColorIfChanged(heart, Ui.RED);
+        if (zoneBar != null) zoneBar.set(3);
+        if (heartTrace != null) {
+            heartTrace.setSamples(new int[]{138, 140, 142, 145, 148, 150, 152, 155, 157, 158, 156, 158, 160, 159, 158});
+        }
+        Ui.setTextIfChanged(duration, "18:32");
+        Ui.setTextIfChanged(coreRemaining, "04:28");
+        Ui.setTextIfChanged(cadence, "176");
+        Ui.setTextIfChanged(climb, "28");
+        Ui.setTextIfChanged(calories, "215");
+        if (gps != null) {
+            Ui.setTextIfChanged(gps, "● GPS 搜星 14");
+            Ui.setTextColorIfChanged(gps, Ui.LIME);
+        }
+
+        // 3. 训练数据统计页 (extraPage / EXTRA_PAGE)
+        Ui.setTextIfChanged(extraClock, clockFormat.format(new java.util.Date()));
+        Ui.setTextIfChanged(avgPace, "5'18\"");
+        Ui.setTextIfChanged(averageHeart, "152");
+        Ui.setTextIfChanged(speed, "11.5");
+        Ui.setTextColorIfChanged(speed, Ui.WHITE);
+        Ui.setTextIfChanged(maxSpeed, "14.8");
+        Ui.setTextIfChanged(steps, "3,280");
+        Ui.setTextIfChanged(maxHeart, "168");
+
+        // 4. 控制页 (controlPage / CONTROL_PAGE)
+        Ui.setTextIfChanged(controlDuration, "18:32");
+        Ui.setTextIfChanged(controlSummary, "3.45 公里 · 215 千卡");
+        setControlsForCompletion(false);
+    }
+
     private void refresh() {
+        if (debugMockEnabled) {
+            renderMockSnapshot();
+            return;
+        }
         if (service == null) return;
-        // Keep the finger path and settle frames allocation-free. The settled callback below
-        // immediately applies a fresh snapshot, so visible metrics lag by at most one page motion.
         if (workoutPager != null && workoutPager.isInMotion()) {
             refreshDeferredByPager = true;
             return;
