@@ -126,21 +126,19 @@ public class WarmupActivity extends WatchActivity {
         FrameLayout acquisition = new FrameLayout(this);
         gpsRing = new Ui.Ring(this);
         acquisition.addView(gpsRing, new FrameLayout.LayoutParams(
-                Ui.dp(this, 96), Ui.dp(this, 96), Gravity.CENTER));
+                Ui.dp(this, 116), Ui.dp(this, 116), Gravity.CENTER));
         LinearLayout acquisitionText = new LinearLayout(this);
         acquisitionText.setOrientation(LinearLayout.VERTICAL);
         acquisitionText.setGravity(Gravity.CENTER);
         gpsValue = Ui.bold(this, "正在搜星", 22, Ui.WHITE);
         gpsValue.setGravity(Gravity.CENTER);
-        acquisitionText.addView(gpsValue, new LinearLayout.LayoutParams(
-                Ui.dp(this, 92), Ui.dp(this, 30)));
+        acquisitionText.addView(gpsValue, new LinearLayout.LayoutParams(-2, Ui.dp(this, 30)));
         gpsStatus = Ui.text(this, "GPS 准备中", Ui.LABEL, Ui.AMBER);
         gpsStatus.setGravity(Gravity.CENTER);
-        acquisitionText.addView(gpsStatus, new LinearLayout.LayoutParams(
-                Ui.dp(this, 94), Ui.dp(this, 20)));
+        acquisitionText.addView(gpsStatus, new LinearLayout.LayoutParams(-2, Ui.dp(this, 20)));
         acquisition.addView(acquisitionText,
                 new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
-        root.addView(acquisition, new LinearLayout.LayoutParams(-1, Ui.dp(this, 104)));
+        root.addView(acquisition, new LinearLayout.LayoutParams(-1, Ui.dp(this, 120)));
 
         sourceSummary = Ui.text(this, "正在检测记录来源", Ui.LABEL, Ui.MUTED);
         sourceSummary.setGravity(Gravity.CENTER);

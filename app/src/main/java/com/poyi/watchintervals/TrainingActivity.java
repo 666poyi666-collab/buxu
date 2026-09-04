@@ -302,33 +302,33 @@ public class TrainingActivity extends WatchActivity {
     private LinearLayout buildExtraPage() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 8), Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 4));
+        root.setPadding(Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 3), Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 4));
         root.setBackgroundColor(Ui.BLACK);
 
         TextView title = Ui.bold(this, "训练数据", Ui.FIGURE_LABEL, Ui.WHITE);
         extraClock = Ui.topBar(this, root, title);
 
         LinearLayout first = new LinearLayout(this);
-        avgPace = Ui.metricCell(this, first, "均速", "--", "/公里", Ui.CYAN, 34);
-        averageHeart = Ui.metricCell(this, first, "均心", "--", "次/分", Ui.RED, 34);
-        root.addView(first, extraRowParams());
-        root.addView(Ui.divider(this));
+        avgPace = Ui.metricCell(this, first, "均速", "--", "/公里", Ui.CYAN, 26, true);
+        averageHeart = Ui.metricCell(this, first, "均心", "--", "次/分", Ui.RED, 26, true);
+        root.addView(first, extraRowParams(false));
+
         LinearLayout second = new LinearLayout(this);
-        speed = Ui.metricCell(this, second, "时速", "--", "km/h", Ui.WHITE, 34);
-        maxSpeed = Ui.metricCell(this, second, "极速", "--", "km/h", Ui.WHITE, 34);
-        root.addView(second, extraRowParams());
-        root.addView(Ui.divider(this));
+        speed = Ui.metricCell(this, second, "时速", "--", "km/h", Ui.WHITE, 26, true);
+        maxSpeed = Ui.metricCell(this, second, "极速", "--", "km/h", Ui.WHITE, 26, true);
+        root.addView(second, extraRowParams(true));
+
         LinearLayout third = new LinearLayout(this);
-        steps = Ui.metricCell(this, third, "步数", "0", "步", Ui.YELLOW, 34);
-        maxHeart = Ui.metricCell(this, third, "最高心率", "--", "次/分", Ui.RED, 34);
-        root.addView(third, extraRowParams());
+        steps = Ui.metricCell(this, third, "步数", "0", "步", Ui.YELLOW, 26, true);
+        maxHeart = Ui.metricCell(this, third, "最高心率", "--", "次/分", Ui.RED, 26, true);
+        root.addView(third, extraRowParams(true));
 
         return root;
     }
 
-    private LinearLayout.LayoutParams extraRowParams() {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, 0, 1);
-        params.topMargin = Ui.dp(this, 7); params.bottomMargin = Ui.dp(this, 7);
+    private LinearLayout.LayoutParams extraRowParams(boolean withTopMargin) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, 0, 1f);
+        if (withTopMargin) params.topMargin = Ui.dp(this, 4);
         return params;
     }
 
@@ -336,34 +336,53 @@ public class TrainingActivity extends WatchActivity {
     private LinearLayout buildControlPage() {
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setGravity(Gravity.CENTER_HORIZONTAL);
-        page.setPadding(Ui.dp(this, 20), Ui.dp(this, 10), Ui.dp(this, 20), Ui.dp(this, 4));
+        page.setPadding(Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 4), Ui.dp(this, Ui.PAGE_MARGIN), Ui.dp(this, 6));
         page.setBackgroundColor(Ui.BLACK);
 
         LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
         header.addView(Ui.workoutGlyph(this, Ui.RED),
-                new LinearLayout.LayoutParams(Ui.dp(this, 34), Ui.dp(this, 34)));
-        TextView title = Ui.bold(this, "训练控制", 18, Ui.WHITE);
+                new LinearLayout.LayoutParams(Ui.dp(this, 28), Ui.dp(this, 28)));
+        TextView title = Ui.bold(this, "训练控制", 16, Ui.WHITE);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, -1, 1);
-        titleParams.leftMargin = Ui.dp(this, 9); header.addView(title, titleParams);
+        titleParams.leftMargin = Ui.dp(this, 8); header.addView(title, titleParams);
         controlState = Ui.chip(this, "训练中", Ui.LIME, Ui.TINT_LIME);
-        header.addView(controlState, new LinearLayout.LayoutParams(Ui.dp(this, 82), Ui.dp(this, 26)));
-        page.addView(header, new LinearLayout.LayoutParams(-1, Ui.dp(this, 40)));
+        header.addView(controlState, new LinearLayout.LayoutParams(Ui.dp(this, 78), Ui.dp(this, 24)));
+        page.addView(header, new LinearLayout.LayoutParams(-1, Ui.dp(this, 30)));
 
-        controlDuration = Ui.numeral(this, "00:00", 43, Ui.WHITE); controlDuration.setGravity(Gravity.CENTER);
-        page.addView(controlDuration, new LinearLayout.LayoutParams(-1, Ui.dp(this, 54)));
-        controlSummary = Ui.text(this, "", Ui.LABEL, Ui.MUTED); controlSummary.setGravity(Gravity.CENTER);
-        page.addView(controlSummary, new LinearLayout.LayoutParams(-1, Ui.dp(this, 22)));
+        LinearLayout heroCard = new LinearLayout(this);
+        heroCard.setOrientation(LinearLayout.VERTICAL);
+        heroCard.setGravity(Gravity.CENTER);
+        heroCard.setBackground(Ui.background(this, Ui.PANEL, Ui.RADIUS_CARD));
+        heroCard.setPadding(Ui.dp(this, 12), Ui.dp(this, 6), Ui.dp(this, 12), Ui.dp(this, 6));
 
-        page.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 1));
-        controls = new LinearLayout(this); controls.setGravity(Gravity.CENTER);
-        pause = Ui.iconAction(this, "暂停训练", 15, Ui.BLACK, Ui.YELLOW, Ui.Symbol.PAUSE);
-        stop = Ui.iconAction(this, "结束训练", 15, Ui.RED, Ui.PANEL, Ui.Symbol.STOP);
-        LinearLayout.LayoutParams action = new LinearLayout.LayoutParams(0, Ui.dp(this, Ui.ACTION_CONTROL), 1);
-        action.rightMargin = Ui.dp(this, 8); controls.addView(pause, action);
-        controls.addView(stop, new LinearLayout.LayoutParams(0, Ui.dp(this, Ui.ACTION_CONTROL), 1));
-        page.addView(controls, new LinearLayout.LayoutParams(-1, Ui.dp(this, Ui.ACTION_CONTROL + 8f)));
-        page.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 1));
+        TextView durationCaption = Ui.bold(this, "运动用时", 12, Ui.MUTED);
+        durationCaption.setGravity(Gravity.CENTER);
+        heroCard.addView(durationCaption, new LinearLayout.LayoutParams(-1, Ui.dp(this, 16)));
+
+        controlDuration = Ui.numeral(this, "00:00", 48, Ui.WHITE);
+        controlDuration.setGravity(Gravity.CENTER);
+        heroCard.addView(controlDuration, new LinearLayout.LayoutParams(-1, -2));
+
+        controlSummary = Ui.text(this, "0.00 公里 · 0 千卡", 13, Ui.LIME);
+        controlSummary.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams summaryParams = new LinearLayout.LayoutParams(-1, -2);
+        summaryParams.topMargin = Ui.dp(this, 2);
+        heroCard.addView(controlSummary, summaryParams);
+
+        LinearLayout.LayoutParams heroParams = new LinearLayout.LayoutParams(-1, 0, 1.25f);
+        heroParams.topMargin = Ui.dp(this, 4);
+        heroParams.bottomMargin = Ui.dp(this, 6);
+        page.addView(heroCard, heroParams);
+
+        pause = Ui.iconAction(this, "暂停训练", 16, Ui.BLACK, Ui.YELLOW, Ui.Symbol.PAUSE);
+        LinearLayout.LayoutParams pauseParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
+        pauseParams.bottomMargin = Ui.dp(this, 6);
+        page.addView(pause, pauseParams);
+
+        stop = Ui.iconAction(this, "结束训练", 16, Ui.RED, Ui.PANEL, Ui.Symbol.STOP);
+        LinearLayout.LayoutParams stopParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
+        page.addView(stop, stopParams);
+
         pause.setOnClickListener(v -> { if (service != null) service.togglePause(); });
         stop.setOnClickListener(v -> confirmStop());
         return page;
@@ -463,14 +482,28 @@ public class TrainingActivity extends WatchActivity {
         routeView = new WorkoutRouteView(this);
         routeView.setActive(false);
         routeView.setBackground(Ui.background(this, Ui.PANEL_ROUTE, Ui.RADIUS_ROUTE));
-        LinearLayout.LayoutParams mapParams = new LinearLayout.LayoutParams(-1, 0, 1);
-        mapParams.topMargin = Ui.dp(this, 4); panel.addView(routeView, mapParams);
-        routeSummary = Ui.text(this, "等待有效定位轨迹", 12, Ui.MUTED);
+        LinearLayout.LayoutParams mapParams = new LinearLayout.LayoutParams(-1, 0, 1f);
+        mapParams.topMargin = Ui.dp(this, 3); panel.addView(routeView, mapParams);
+
+        LinearLayout footer = new LinearLayout(this);
+        footer.setOrientation(LinearLayout.VERTICAL);
+        footer.setGravity(Gravity.CENTER);
+        footer.setPadding(Ui.dp(this, 8), Ui.dp(this, 5), Ui.dp(this, 8), Ui.dp(this, 5));
+        footer.setBackground(Ui.background(this, Ui.PANEL, 12));
+
+        routeSummary = Ui.text(this, "等待有效定位轨迹", 12, Ui.LIME);
         routeSummary.setGravity(Gravity.CENTER);
-        panel.addView(routeSummary, new LinearLayout.LayoutParams(-1, Ui.dp(this, 32)));
+        footer.addView(routeSummary, new LinearLayout.LayoutParams(-1, -2));
+
         TextView hint = Ui.text(this, "红色起点 · 白色当前位置", 10, Ui.MUTED);
         hint.setGravity(Gravity.CENTER);
-        panel.addView(hint, new LinearLayout.LayoutParams(-1, Ui.dp(this, 17)));
+        LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(-1, -2);
+        hintParams.topMargin = Ui.dp(this, 2);
+        footer.addView(hint, hintParams);
+
+        LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(-1, -2);
+        footerParams.topMargin = Ui.dp(this, 4);
+        panel.addView(footer, footerParams);
         close.setOnClickListener(v -> hideRoute());
         return panel;
     }
